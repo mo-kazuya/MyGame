@@ -223,6 +223,65 @@ const SPRITE_DEFS = {
     '........kwwk....',
     '.........kk.....',
   ],
+  crown: [
+    '................',
+    '..k...k...k.....',
+    '.kyk.kyk.kyk....',
+    '.kyykyyykyyk....',
+    '.kyyyyryyyyk....',
+    '.kyyyyyyyyyk....',
+    '.kyykyyykyyk....',
+    '.kkkkkkkkkkk....',
+  ],
+  mattock: [
+    '..kkkkkkkkkk....',
+    '.kccccccccccck..',
+    'kcCkkkkookkkkCck',
+    '.kk....kok...kk.',
+    '.......kok......',
+    '.......kok......',
+    '.......kok......',
+    '.......kok......',
+    '.......kok......',
+    '........k.......',
+  ],
+  wing: [
+    '........kk......',
+    '......kkwwk.....',
+    '....kkwwwwk.....',
+    '..kkwwwlwwk.....',
+    '.kwwwwlwwwk.....',
+    'kwwwwlwwwk......',
+    'kwwwlwwwk.......',
+    '.kwlwwkk........',
+    '..kkkk..........',
+  ],
+  hourglass: [
+    '..kkkkkkkkkk....',
+    '..koooooooook...',
+    '...kwyyyyywk....',
+    '....kwyyywk.....',
+    '.....kwywk......',
+    '......kyk.......',
+    '.....kwwwk......',
+    '....kwwywwk.....',
+    '...kwwyyywwk....',
+    '..koooooooook...',
+    '..kkkkkkkkkk....',
+  ],
+  lamp: [
+    '.......kk.......',
+    '......kyyk......',
+    '......kyyk......',
+    '.......kk.......',
+    '.....kkkkkk.....',
+    '....kowwwwok....',
+    '....kowyywok....',
+    '....kowyywok....',
+    '....kowwwwok....',
+    '...kkooooookk...',
+    '...kkkkkkkkkk...',
+  ],
   slayer: [
     '.............kk.',
     '............klk.',
@@ -241,8 +300,13 @@ const SPRITE_DEFS = {
     '.kk.............',
   ],
 };
-// 魔法の水はポーションの色違い
-SPRITE_DEFS.elixir = SPRITE_DEFS.potion.map(r => r.replace(/r/g, 'l').replace(/R/g, 'L'));
+// 色違いで作るスプライト
+const recolor = (rows, map) => rows.map(r => r.replace(/./g, ch => (ch in map ? map[ch] : ch)));
+SPRITE_DEFS.elixir = recolor(SPRITE_DEFS.potion, { r: 'l', R: 'L' });
+SPRITE_DEFS.revive = recolor(SPRITE_DEFS.potion, { r: 'y', R: 'n' });
+SPRITE_DEFS.kingslime = recolor(SPRITE_DEFS.slime, { g: 'l', G: 'L' });
+SPRITE_DEFS.minotaur = recolor(SPRITE_DEFS.goblin, { g: 'o', G: 'O', o: 'R', O: 'k' });
+SPRITE_DEFS.lich = recolor(SPRITE_DEFS.wizard, { p: 'C', P: 'k', s: 'e', w: 'r' });
 
 function makeSprite(rows) {
   const full = Array(Math.max(0, 16 - rows.length)).fill('').concat(rows);

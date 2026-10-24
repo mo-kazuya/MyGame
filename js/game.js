@@ -1,7 +1,7 @@
 'use strict';
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
-const SAVE_KEY = 'xanaduLike.save.v1';
+const SAVE_KEY = 'xanaduLike.save.v2';
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -14,11 +14,14 @@ const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 const touching = (a, b, m) => a.x < b.x + b.w + m && a.x + a.w + m > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const touching2 = (a, b, m) => a.x < b.x + b.w + m && a.x + a.w + m > b.x && a.y < b.y + b.h + m && a.y + a.h + m > b.y;
+const isTop = () => area.def.view === 'top';
 
 // ---------------------------------------------------------------- 入力
 const KEYMAP = {
   ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
   KeyZ: 'jump', Space: 'jump', KeyX: 'magic', KeyA: 'potion', KeyS: 'elixir',
+  KeyD: 'dig', KeyQ: 'spell', KeyV: 'items',
   KeyC: 'status', Enter: 'ok', Escape: 'cancel', KeyP: 'cancel',
 };
 const keys = {}, pressed = {};
@@ -64,6 +67,7 @@ const SFX = {
   jump: () => tone(300, 0.1, 'square', 0.03, 250),
   magic: () => tone(900, 0.15, 'sawtooth', 0.04, -600),
   fire: () => tone(180, 0.2, 'sawtooth', 0.05, -100),
+  dig: () => { tone(90, 0.1, 'square', 0.07, -40); tone(70, 0.12, 'triangle', 0.06, -30, 0.08); },
   door: () => tone(220, 0.12, 'triangle', 0.06, 110),
   select: () => tone(740, 0.04, 'square', 0.03),
   bad: () => tone(120, 0.12, 'square', 0.04),
@@ -87,7 +91,7 @@ function msgThrottle(id, text, cls, frames = 120) {
 }
 
 // ---------------------------------------------------------------- ゲーム状態
-let G = null;          // { p, state, time, fade, endTimer }
+let G = null;          // { p, state, time, fade, endTimer, freeze }
 let area = null;       // 現在のエリア
 let enemies = [], items = [], shots = [], parts = [], texts = [];
 let mode = 'title';    // title / play / menu
@@ -95,22 +99,28 @@ let cam = { x: 0, y: 0 };
 
 function newPlayer() {
   return {
-    x: 0, y: 0, w: 20, h: 28, vx: 0, vy: 0, dir: 1,
+    x: 0, y: 0, w: 20, h: 28, vx: 0, vy: 0, dir: 1, aimX: 1, aimY: 0,
     onGround: false, climb: false, drop: 0, atkCool: 0, inv: 0, anim: 0,
     level: 1, xp: 0, hp: 50, maxHp: 50, mp: 10, maxMp: 10,
-    str: 5, def: 2, agi: 5, karma: 0, gold: 120, food: 60,
-    keys: 0, potions: 1, elixirs: 0,
+    str: 5, def: 2, agi: 5, int: 5, karma: 0, gold: 600, food: 60,
+    keys: 0, potions: 1, elixirs: 0, crowns: 0, lamp: false,
+    tools: { mattock: 0, wing: 0, hourglass: 0, revive: 0 },
     weapons: [{ id: 'dagger', exp: 0 }], weapon: 0,
     armors: ['cloth'], armor: 'cloth', shields: [], shield: null,
+    armorExp: {}, shieldExp: {},
+    spells: [{ id: 'fire', exp: 0 }], spell: 0,
+    train: { str: 0, def: 0, agi: 0, int: 0, hp: 0 },
   };
 }
+const newState = () => ({ taken: {}, opened: {}, killed: {}, dug: {}, flags: {}, visited: {} });
 
 function newGame() {
-  G = { p: newPlayer(), state: { taken: {}, opened: {}, flags: {}, visited: {} }, time: 0, fade: null, endTimer: 0, xpNotice: 0 };
+  G = { p: newPlayer(), state: newState(), time: 0, fade: null, endTimer: 0, xpNotice: 0, freeze: 0 };
   logLines.length = 0;
   loadArea('town', { start: true });
-  msg('竜が棲むという地下迷宮の入口が、町の東にある。', 'info');
-  msg('町の店で装備を整えて挑もう。敵には体当たりで攻撃だ！');
+  msg('王から支度金 600G を賜った。竜の棲む地下迷宮は町の東にある。', 'info');
+  msg('王城の訓練所で己を鍛えるか、店で装備を整えるか――使い道はあなた次第だ。');
+  msg('迷宮の魔物は倒すと二度と現れない。経験値も金も限りがある。', 'info');
 }
 
 function hasSave() {
@@ -126,7 +136,8 @@ function loadGame() {
   try {
     const d = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (!d) return false;
-    G = { p: Object.assign(newPlayer(), d.p), state: d.state, time: d.time || 0, fade: null, endTimer: 0, xpNotice: 0 };
+    G = { p: Object.assign(newPlayer(), d.p), state: Object.assign(newState(), d.state), time: d.time || 0,
+          fade: null, endTimer: 0, xpNotice: 0, freeze: 0 };
     logLines.length = 0;
     loadArea('town', { door: 'I' });
     msg('宿屋で目を覚ました。', 'info');
@@ -135,12 +146,19 @@ function loadGame() {
 }
 
 const curWeapon = () => G.p.weapons[G.p.weapon];
-const totalDef = () => G.p.def + ARMORS[G.p.armor].def + (G.p.shield ? SHIELDS[G.p.shield].def : 0);
+const curSpell = () => G.p.spells[G.p.spell];
+function armorDef() {
+  const p = G.p;
+  const a = ARMORS[p.armor].def * (1 + 0.15 * profLevel(p.armorExp[p.armor] || 0));
+  const s = p.shield ? SHIELDS[p.shield].def * (1 + 0.15 * profLevel(p.shieldExp[p.shield] || 0)) : 0;
+  return a + s;
+}
+const totalDef = () => Math.round(G.p.def + armorDef());
 
 // ---------------------------------------------------------------- エリア
-const ITEM_CHARS = '$!*?%&';
-const DOOR_CHARS = new Set('abcdefghWAFIT'.split(''));
-const SHOP_CHARS = new Set('WAFIT'.split(''));
+const ITEM_CHARS = '$!*?%&mGQRL';
+const DOOR_CHARS = new Set('abcdefghKWAFSIT'.split(''));
+const SHOP_CHARS = new Set('KWAFSIT'.split(''));
 const SOLID = new Set(['#', '=', '+']);
 
 function tile(tx, ty) {
@@ -158,18 +176,21 @@ function loadArea(id, entry) {
   const def = AREAS[id];
   const w = Math.max(...def.map.map(r => r.length));
   const grid = def.map.map(r => r.padEnd(w, def.bg).split(''));
-  area = { id, def, grid, w, h: grid.length };
+  area = { id, def, grid, w, h: grid.length, total: 0 };
   enemies = []; items = []; shots = []; parts = []; texts = [];
+  G.freeze = 0;
   let start = null;
   for (let y = 0; y < area.h; y++) {
     for (let x = 0; x < w; x++) {
       const ch = grid[y][x];
       const key = `${id}:${x}:${y}`;
-      if (ch === '+' && G.state.opened[key]) grid[y][x] = def.bg;
+      if ((ch === '+' && G.state.opened[key]) || (ch === '#' && G.state.dug[key])) grid[y][x] = def.bg;
       else if (ch === 'P') { start = { x, y }; grid[y][x] = def.bg; }
-      else if (ch >= '1' && ch <= '9') {
+      else if (ENEMIES[ch]) {
         grid[y][x] = def.bg;
-        if (!(ENEMIES[ch].boss && G.state.flags.dragon)) spawnEnemy(ch, x, y);
+        if (!ENEMIES[ch].peaceful) area.total++;
+        // ザナドゥ流：倒した魔物は二度と現れない
+        if (!G.state.killed[key]) spawnEnemy(ch, x, y, key);
       } else if (ITEM_CHARS.includes(ch)) {
         grid[y][x] = def.bg;
         if (!G.state.taken[key]) items.push({ ch, key, x: x * T + 4, y: y * T + 4, w: 24, h: 28, bob: Math.random() * 6 });
@@ -191,16 +212,18 @@ function loadArea(id, entry) {
   }
 }
 
-function spawnEnemy(ch, tx, ty) {
+function spawnEnemy(ch, tx, ty, key) {
   const d = ENEMIES[ch];
-  const e = Object.assign({}, d, {
-    type: ch, maxHp: d.hp, vx: 0, vy: 0, dir: -1, cool: 30, flash: 0, onGround: false,
-    t: rnd(0, 200), state: 'hover', st: 0,
+  const e = Object.assign({ scale: 2 }, d, {
+    type: ch, key, maxHp: d.hp, vx: 0, vy: 0, dir: -1, cool: 30, flash: 0, onGround: false,
+    t: rnd(0, 200), state: 'hover', st: 0, wx: 0, wy: 0,
   });
   e.x = tx * T + (T - e.w) / 2;
-  e.y = (e.ai === 'fly' || e.ai === 'ghost') ? ty * T - e.h / 2 : ty * T + T - e.h;
+  e.y = (e.ai === 'fly' || e.ai === 'ghost' || area.def.view === 'top') ? ty * T + (T - e.h) / 2 : ty * T + T - e.h;
   enemies.push(e);
 }
+
+const remaining = () => enemies.filter(e => !e.peaceful).length;
 
 // ---------------------------------------------------------------- 当たり判定付き移動
 function moveX(e, dx) {
@@ -235,12 +258,21 @@ function moveY(e, dy, platforms) {
   }
   return null;
 }
+function solidAt(r) {
+  const x0 = Math.floor(r.x / T), x1 = Math.floor((r.x + r.w - 0.01) / T);
+  const y0 = Math.floor(r.y / T), y1 = Math.floor((r.y + r.h - 0.01) / T);
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (isSolid(tx, ty)) return true;
+  return false;
+}
 
 // ---------------------------------------------------------------- プレイヤー
 function updatePlayer() {
   const p = G.p;
   if (p.atkCool > 0) p.atkCool--;
   if (p.inv > 0) p.inv--;
+  if (pressed.spell) switchSpell();
+  if (isTop()) { updatePlayerTop(); return; }
+
   const dirIn = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
   const cx = p.x + p.w / 2;
 
@@ -255,7 +287,7 @@ function updatePlayer() {
   const ladderBelow = tileAtPx(cx, p.y + p.h + 2) === 'H';
   if (!p.climb) {
     if (keys.up && onLadder) p.climb = true;
-    else if (keys.down && p.onGround && ladderBelow) { p.climb = true; p.y += 3; }
+    else if (keys.down && p.onGround && ladderBelow && !keys.dig) { p.climb = true; p.y += 3; }
   }
   if (p.climb) {
     if (dirIn && !keys.up && !keys.down) {
@@ -286,14 +318,14 @@ function updatePlayer() {
 
   // 歩き・ジャンプ
   p.vx = dirIn * 2.4;
-  if (dirIn) p.dir = dirIn;
+  if (dirIn) { p.dir = dirIn; p.aimX = dirIn; p.aimY = 0; }
   if (pressed.jump && p.onGround) { p.vy = -8; p.onGround = false; SFX.jump(); }
-  if (keys.down && p.onGround && tileAtPx(cx, p.y + p.h + 2) === '-') p.drop = 10;
+  if (keys.down && !keys.dig && p.onGround && tileAtPx(cx, p.y + p.h + 2) === '-') p.drop = 10;
   p.vy = Math.min(p.vy + 0.45, 9);
 
   const hx = moveX(p, p.vx);
   if (hx && tile(hx.tx, hx.ty) === '+') tryUnlock(hx.tx, hx.ty);
-  bumpEnemies(dirIn);
+  bumpEnemies('x', dirIn);
 
   p.onGround = false;
   const hy = moveY(p, p.vy, p.drop <= 0);
@@ -301,8 +333,32 @@ function updatePlayer() {
   if (hy) { if (p.vy > 0) p.onGround = true; p.vy = 0; }
   if (dirIn && p.onGround) p.anim++;
 
-  // 魔法・道具
   if (pressed.magic) castMagic();
+  if (pressed.dig) dig(keys.down);
+  afterPlayerMove();
+}
+
+// 守護者の部屋：見下ろし視点で4方向に移動
+function updatePlayerTop() {
+  const p = G.p;
+  const dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+  if (dx) p.dir = dx;
+  if (dx || dy) { p.aimX = dx; p.aimY = dy; p.anim++; }
+  const sp = (dx && dy) ? 1.7 : 2.4;
+  p.vx = dx * sp;
+  const hx = moveX(p, dx * sp);
+  if (hx && tile(hx.tx, hx.ty) === '+') tryUnlock(hx.tx, hx.ty);
+  bumpEnemies('x', dx);
+  moveY(p, dy * sp, false);
+  bumpEnemies('y', dy);
+  p.onGround = true; p.climb = false;
+  if (pressed.jump) {
+    const c = tileAtPx(p.x + p.w / 2, p.y + p.h / 2);
+    if (DOOR_CHARS.has(c)) { enterDoor(c); return; }
+  }
+  if (pressed.magic) castMagic();
+  if (pressed.dig) dig(false);
   afterPlayerMove();
 }
 
@@ -340,30 +396,61 @@ function tryUnlock(tx, ty) {
   burst(tx * T + 16, ty * T + 16, '#ffd84a', 12);
 }
 
-function bumpEnemies(dirIn) {
+// つるはし：前（↓を押しながらなら足元）のレンガを掘る
+function dig(down) {
+  const p = G.p;
+  if (area.def.noDig) { msgThrottle('nodig', 'ここでは掘れない。'); return; }
+  if (p.tools.mattock <= 0) { msgThrottle('nomat', 'つるはしを持っていない。（道具屋で買える）', 'bad'); SFX.bad(); return; }
+  const cx = p.x + p.w / 2;
+  let targets;
+  if (down) {
+    targets = [[Math.floor(cx / T), Math.floor((p.y + p.h + 2) / T)]];
+  } else {
+    const tx = Math.floor((p.dir > 0 ? p.x + p.w + 12 : p.x - 12) / T);
+    const ty = Math.floor((p.y + p.h - 1) / T);
+    targets = [[tx, ty], [tx, ty - 1]];
+  }
+  const breakable = ([tx, ty]) => tile(tx, ty) === '#' && tx > 0 && ty > 0 && tx < area.w - 1 && ty < area.h - 1;
+  const ok = targets.filter(breakable);
+  if (!ok.length) { msgThrottle('cantdig', 'ここは掘れない。'); return; }
+  p.tools.mattock--;
+  for (const [tx, ty] of ok) {
+    area.grid[ty][tx] = area.def.bg;
+    G.state.dug[`${area.id}:${tx}:${ty}`] = true;
+    burst(tx * T + 16, ty * T + 16, THEMES[area.def.theme].brick, 16);
+  }
+  SFX.dig();
+  msg(`レンガを掘りくずした。（つるはし 残り ${p.tools.mattock}）`);
+}
+
+function bumpEnemies(axis, dirIn) {
   const p = G.p;
   for (const e of enemies) {
     if (e.dead || !overlap(p, e)) continue;
-    const pc = p.x + p.w / 2, ec = e.x + e.w / 2;
+    const pc = axis === 'x' ? p.x + p.w / 2 : p.y + p.h / 2;
+    const ec = axis === 'x' ? e.x + e.w / 2 : e.y + e.h / 2;
     if (!e.boss) {
-      const before = p.x;
-      p.x = pc < ec ? e.x - p.w : e.x + e.w;
+      const bx = p.x, by = p.y;
+      if (axis === 'x') p.x = pc < ec ? e.x - p.w : e.x + e.w;
+      else p.y = pc < ec ? e.y - p.h : e.y + e.h;
       // 押し戻した先が壁なら敵の方を押す
-      const tmp = { x: p.x, y: p.y, w: p.w, h: p.h };
-      if (moveX(tmp, 0.01) || moveX(tmp, -0.02)) { p.x = before; moveX(e, pc < ec ? 4 : -4); }
+      if (solidAt(p)) {
+        p.x = bx; p.y = by;
+        if (axis === 'x') moveX(e, pc < ec ? 4 : -4); else moveY(e, pc < ec ? 4 : -4, false);
+      }
     }
     const towards = (pc < ec && dirIn > 0) || (pc > ec && dirIn < 0);
-    if (towards && p.atkCool <= 0) playerAttack(e);
+    if (towards && p.atkCool <= 0) playerAttack(e, axis);
   }
 }
 
-function playerAttack(e) {
+function playerAttack(e, axis) {
   const p = G.p;
   p.atkCool = Math.max(8, 20 - Math.floor(p.agi / 2));
-  const cx = (p.x + p.w / 2 + e.x + e.w / 2) / 2, cy = Math.max(p.y, e.y) + 10;
+  const cx = (p.x + p.w / 2 + e.x + e.w / 2) / 2, cy = (p.y + p.h / 2 + e.y + e.h / 2) / 2;
   if (Math.random() < 0.08) { addText(cx, cy, 'MISS', '#aaaaff'); SFX.miss(); return; }
   const cw = curWeapon(), w = WEAPONS[cw.id];
-  const wlBefore = weaponLevel(cw.exp);
+  const wlBefore = profLevel(cw.exp);
   const atk = p.str + w.atk * (1 + 0.15 * wlBefore);
   let dmg = Math.max(1, Math.round(atk - e.def * 0.6 + rnd(-1, 2)));
   if (e.boss && !w.slayer) {
@@ -371,11 +458,14 @@ function playerAttack(e) {
     msgThrottle('slayer', 'ドラゴンの鱗は硬すぎる！ ドラゴンスレイヤーでなければ…', 'bad', 300);
   }
   cw.exp++;
-  const wl = weaponLevel(cw.exp);
+  const wl = profLevel(cw.exp);
   if (wl > wlBefore) msg(`${w.name}の熟練度が上がった！（Lv${wl}）`, 'good');
   slash(cx, cy);
   damageEnemy(e, dmg);
-  if (!e.boss && !e.dead) moveX(e, (e.x + e.w / 2 > p.x + p.w / 2 ? 1 : -1) * 6);
+  if (!e.boss && !e.guardian && !e.dead) {
+    const s = axis === 'y' ? Math.sign(e.y - p.y) : Math.sign(e.x - p.x);
+    if (axis === 'y') moveY(e, s * 6, false); else moveX(e, s * 6);
+  }
 }
 
 function damageEnemy(e, dmg) {
@@ -389,10 +479,11 @@ function damageEnemy(e, dmg) {
 function killEnemy(e) {
   const p = G.p;
   e.dead = true;
+  if (e.key) G.state.killed[e.key] = true;
   p.xp += e.xp;
   p.gold += e.gold;
   SFX.kill();
-  burst(e.x + e.w / 2, e.y + e.h / 2, e.boss ? '#ff8030' : '#ffffff', e.boss ? 60 : 14);
+  burst(e.x + e.w / 2, e.y + e.h / 2, e.boss || e.guardian ? '#ff8030' : '#ffffff', e.boss || e.guardian ? 50 : 14);
   addText(e.x + e.w / 2, e.y - 12, `+${e.xp}EXP`, '#8cf08c');
   if (e.karma) {
     p.karma += e.karma;
@@ -400,11 +491,18 @@ function killEnemy(e) {
   } else {
     msg(`${e.name}を倒した。 経験値 ${e.xp}${e.gold ? ` / ${e.gold}G` : ''}`);
   }
+  if (e.guardian) {
+    p.crowns++;
+    SFX.level();
+    msg(`守護者は王冠を遺した。（王冠 ${p.crowns} / ${CROWNS_NEEDED}）`, 'info');
+    if (p.crowns >= CROWNS_NEEDED) msg('3つの王冠がそろった！ 竜の巣への扉が開くはずだ。', 'info');
+  }
   if (e.boss) {
     G.state.flags.dragon = true;
     G.endTimer = 180;
     msg('ドラゴンを倒した！！ 地の底に静寂が戻った…', 'info');
   }
+  if (!e.peaceful && remaining() === 0 && area.total > 0) msg(`${area.def.name}の魔物を全て倒した。`, 'good');
   if (p.xp >= needXp(p.level) && G.xpNotice !== p.level) {
     G.xpNotice = p.level;
     msg('経験値が十分たまった。町の寺院でレベルを上げてもらおう。', 'info');
@@ -420,22 +518,58 @@ function hurtPlayer(atk, src, text) {
   SFX.hurt();
   addText(p.x + p.w / 2, p.y, String(dmg), '#ff6060');
   if (text) msg(text, 'bad');
+  // 防具も攻撃を受けるほど体になじむ
+  const before = profLevel(p.armorExp[p.armor] || 0);
+  p.armorExp[p.armor] = (p.armorExp[p.armor] || 0) + 1;
+  if (p.armor !== 'cloth' && profLevel(p.armorExp[p.armor]) > before) msg(`${ARMORS[p.armor].name}が体になじんできた。（Lv${profLevel(p.armorExp[p.armor])}）`, 'good');
+  if (p.shield) p.shieldExp[p.shield] = (p.shieldExp[p.shield] || 0) + 1;
   if (src && !p.climb) {
-    const dir = (p.x + p.w / 2) < (src.x + src.w / 2) ? -1 : 1;
-    moveX(p, dir * 10);
+    if (isTop()) {
+      const ax = (p.x + p.w / 2) - (src.x + src.w / 2), ay = (p.y + p.h / 2) - (src.y + src.h / 2);
+      if (Math.abs(ax) > Math.abs(ay)) moveX(p, Math.sign(ax) * 10); else moveY(p, Math.sign(ay) * 10, false);
+    } else {
+      moveX(p, ((p.x + p.w / 2) < (src.x + src.w / 2) ? -1 : 1) * 10);
+    }
   }
   if (p.hp <= 0) playerDied();
 }
 
+function switchSpell() {
+  const p = G.p;
+  if (p.spells.length < 2) { msgThrottle('onespell', 'まだ他の魔法を覚えていない。（町の魔法屋で学べる）'); return; }
+  p.spell = (p.spell + 1) % p.spells.length;
+  SFX.select();
+  msg(`魔法を ${SPELLS[curSpell().id].name} に切り替えた。`);
+}
+
+function spellPower(sp) {
+  const p = G.p, s = SPELLS[sp.id];
+  return Math.round((4 + p.int * 1.3 + p.level * 1.5) * s.power * (1 + 0.15 * profLevel(sp.exp)));
+}
+
 function castMagic() {
   const p = G.p;
-  if (p.mp < 3) { msgThrottle('nomp', 'MPが足りない。', 'bad', 60); SFX.bad(); return; }
-  p.mp -= 3;
+  const sp = curSpell(), s = SPELLS[sp.id];
+  if (p.mp < s.mp) { msgThrottle('nomp', 'MPが足りない。', 'bad', 60); SFX.bad(); return; }
+  p.mp -= s.mp;
   SFX.magic();
-  shots.push({
-    x: p.x + p.w / 2 - 6 + p.dir * 10, y: p.y + 8, w: 12, h: 12,
-    vx: p.dir * 6, vy: 0, life: 70, friendly: true, dmg: 6 + p.level * 3,
-  });
+  const dmg = spellPower(sp);
+  const ox = p.x + p.w / 2 - 6, oy = p.y + p.h / 2 - 8;
+  let ax = p.aimX, ay = isTop() ? p.aimY : 0;
+  if (!ax && !ay) ax = p.dir;
+  const len = Math.hypot(ax, ay);
+  ax /= len; ay /= len;
+  const base = { w: 12, h: 12, friendly: true, dmg, spell: sp };
+  if (sp.id === 'fire') {
+    shots.push(Object.assign({}, base, { x: ox + ax * 10, y: oy + ay * 10, vx: ax * 6, vy: ay * 6, life: 70, kind: 'fire' }));
+  } else if (sp.id === 'needle') {
+    shots.push(Object.assign({}, base, { x: ox + ax * 10, y: oy + ay * 10, vx: ax * 8, vy: ay * 8, life: 60, kind: 'needle', pierce: true, hit: new Set() }));
+  } else {
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      shots.push(Object.assign({}, base, { x: ox, y: oy, vx: Math.cos(a) * 5, vy: Math.sin(a) * 5, life: 28, kind: 'thunder' }));
+    }
+  }
 }
 
 function usePotion() {
@@ -458,15 +592,49 @@ function useElixir() {
   msg('魔法の水を飲んだ。MPが全回復した。', 'good');
 }
 
+function useTool(id) {
+  const p = G.p;
+  if (p.tools[id] <= 0) return false;
+  if (id === 'mattock') { dig(false); return true; }
+  if (id === 'wing') {
+    if (area.id === 'lair' && !G.state.flags.dragon) { msg('竜の気配が翼の魔力をかき消した！', 'bad'); SFX.bad(); return false; }
+    if (area.id === 'town') { msg('ここはもう町だ。'); return false; }
+    p.tools.wing--;
+    SFX.magic();
+    msg('魔法の翼が光に包まれ、町へと運ばれた。', 'info');
+    G.fade = { t: 0, dur: 40, cb: () => loadArea('town', { door: 'I' }) };
+    return true;
+  }
+  if (id === 'hourglass') {
+    p.tools.hourglass--;
+    G.freeze = 420;
+    SFX.level();
+    msg('砂時計を返した。魔物たちの時が止まった！', 'info');
+    return true;
+  }
+  if (id === 'revive') { msg('命の霊薬は力尽きたときに自動で使われる。'); return false; }
+  return false;
+}
+
 function pickItem(it) {
   const p = G.p;
   const full = (n) => { if (n >= MAX_ITEM) { msgThrottle('full' + it.ch, 'これ以上持てない。'); return true; } return false; };
+  const tool = (id) => { if (full(p.tools[id])) return false; p.tools[id]++; msg(`${TOOLS[id].name}を手に入れた。`, 'good'); SFX.item(); return true; };
   switch (it.ch) {
-    case '$': { const g = { d1: 50, d2: 150, d3: 300 }[area.id] || 50; p.gold += g; msg(`${g}G を拾った。`, 'good'); SFX.coin(); break; }
+    case '$': { const g = { d1: 60, d2: 160, d3: 300, r1: 80, r2: 200, r3: 300 }[area.id] || 50; p.gold += g; msg(`${g}G を拾った。`, 'good'); SFX.coin(); break; }
     case '!': if (full(p.potions)) return; p.potions++; msg('薬を手に入れた。', 'good'); SFX.item(); break;
     case '*': if (full(p.elixirs)) return; p.elixirs++; msg('魔法の水を手に入れた。', 'good'); SFX.item(); break;
     case '?': if (full(p.keys)) return; p.keys++; msg('鍵を手に入れた。', 'good'); SFX.item(); break;
     case '%': p.food = Math.min(MAX_FOOD, p.food + 40); msg('食料を見つけた。（+40）', 'good'); SFX.item(); break;
+    case 'm': if (!tool('mattock')) return; msg('D キーで目の前のレンガを掘れる。↓＋D で足元を掘る。', 'info'); break;
+    case 'G': if (!tool('wing')) return; break;
+    case 'Q': if (!tool('hourglass')) return; break;
+    case 'R': if (!tool('revive')) return; break;
+    case 'L':
+      p.lamp = true;
+      msg('ランプを手に入れた。暗い場所でも遠くまで見渡せる。', 'info');
+      SFX.item();
+      break;
     case '&':
       p.weapons.push({ id: 'slayer', exp: 0 });
       p.weapon = p.weapons.length - 1;
@@ -487,7 +655,11 @@ function updateEnemy(e) {
   const dx = (p.x + p.w / 2) - (e.x + e.w / 2);
   const dy = (p.y + p.h / 2) - (e.y + e.h / 2);
 
-  if (e.ai === 'walk') {
+  if (e.ai === 'boss') {
+    updateBoss(e, dx);
+  } else if (isTop()) {
+    updateEnemyTop(e, dx, dy);
+  } else if (e.ai === 'walk') {
     let sp = e.speed;
     if (e.chase && Math.abs(dx) < T * 6 && Math.abs(dy) < T * 1.5) { e.dir = dx > 0 ? 1 : -1; sp *= 1.3; }
     if (touching(e, p, 1) && Math.sign(dx) === e.dir) sp = 0;
@@ -522,19 +694,44 @@ function updateEnemy(e) {
     if (vx) e.dir = Math.sign(vx);
     moveX(e, vx);
     moveY(e, Math.sin(e.t / 40) * 0.4, false);
-  } else if (e.ai === 'boss') {
-    updateBoss(e, dx);
   }
 
   // プレイヤーと重ならないよう押し戻す
   if (!e.boss && overlap(e, p)) {
-    const target = (e.x + e.w / 2 < p.x + p.w / 2) ? p.x - e.w : p.x + p.w;
-    moveX(e, clamp(target - e.x, -T + 1, T - 1));
+    if (isTop() && Math.abs(dy) * (e.w + p.w) > Math.abs(dx) * (e.h + p.h)) {
+      const target = dy > 0 ? p.y - e.h : p.y + p.h;
+      moveY(e, clamp(target - e.y, -T + 1, T - 1), false);
+    } else {
+      const target = dx > 0 ? p.x - e.w : p.x + p.w;
+      moveX(e, clamp(target - e.x, -T + 1, T - 1));
+    }
   }
   // 接触攻撃
-  if (!e.peaceful && e.cool <= 0 && p.inv <= 0 && (e.boss ? overlap(e, p) : touching(e, p, 2))) {
+  const contact = e.boss ? overlap(e, p) : isTop() ? touching2(e, p, 2) : touching(e, p, 2);
+  if (!e.peaceful && e.cool <= 0 && p.inv <= 0 && contact) {
     hurtPlayer(e.atk, e);
     e.cool = e.rate;
+  }
+}
+
+// 見下ろし視点の敵：近づくと追いかけ、離れていればうろつく
+function updateEnemyTop(e, dx, dy) {
+  const dist = Math.hypot(dx, dy);
+  const sp = e.ai === 'ghost' ? 0.5 : (e.speed || 1);
+  let vx, vy;
+  if (e.ai !== 'ghost' && dist < T * 7) {
+    if (touching2(e, G.p, 1)) { vx = vy = 0; } else { vx = dx / dist * sp; vy = dy / dist * sp; }
+  } else {
+    if (e.t % 90 === 0) { const a = Math.random() * Math.PI * 2; e.wx = Math.cos(a); e.wy = Math.sin(a); }
+    vx = e.wx * sp * 0.6; vy = e.wy * sp * 0.6;
+  }
+  if (vx) e.dir = Math.sign(vx);
+  if (moveX(e, vx)) e.wx *= -1;
+  if (moveY(e, vy, false)) e.wy *= -1;
+  if (e.shoot && e.t % e.shoot.rate === 0 && dist < T * 9) {
+    const a = Math.atan2(dy, dx);
+    const spread = e.shoot.spread ? [-0.3, 0, 0.3] : [0];
+    for (const d of spread) enemyShot(e, Math.cos(a + d) * e.shoot.speed, Math.sin(a + d) * e.shoot.speed, e.shoot.dmg);
   }
 }
 
@@ -576,18 +773,21 @@ function enemyShot(e, vx, vy, dmg) {
 function updateShots() {
   const p = G.p;
   for (const s of shots) {
+    if (!s.friendly && G.freeze > 0) continue; // 止まった時の中では敵の弾も止まる
     s.x += s.vx; s.y += s.vy; s.life--;
     if (isSolid(Math.floor((s.x + 6) / T), Math.floor((s.y + 6) / T))) { s.life = 0; burst(s.x + 6, s.y + 6, s.friendly ? '#80c0ff' : '#ff8030', 5); }
     if (s.life <= 0) continue;
     if (s.friendly) {
       for (const e of enemies) {
-        if (e.dead || !overlap(s, e)) continue;
+        if (e.dead || !overlap(s, e) || (s.hit && s.hit.has(e))) continue;
         let dmg = Math.max(1, Math.round(s.dmg - e.def / 4));
         if (e.boss) dmg = Math.floor(dmg / 2);
+        const before = profLevel(s.spell.exp);
+        s.spell.exp++;
+        if (profLevel(s.spell.exp) > before) msg(`${SPELLS[s.spell.id].name}の熟練度が上がった！（Lv${profLevel(s.spell.exp)}）`, 'good');
         damageEnemy(e, dmg);
-        s.life = 0;
         burst(s.x + 6, s.y + 6, '#80c0ff', 8);
-        break;
+        if (s.pierce) s.hit.add(e); else { s.life = 0; break; }
       }
     } else if (overlap(s, p) && p.inv <= 0) {
       hurtPlayer(s.dmg, s);
@@ -608,7 +808,7 @@ function burst(x, y, color, n) {
 function slash(x, y) { parts.push({ x, y, slash: true, life: 8 }); }
 
 function updateEffects() {
-  for (const q of parts) { if (!q.slash) { q.x += q.vx; q.y += q.vy; q.vy += 0.12; } q.life--; }
+  for (const q of parts) { if (!q.slash) { q.x += q.vx; q.y += q.vy; if (!isTop()) q.vy += 0.12; } q.life--; }
   parts = parts.filter(q => q.life > 0);
   for (const t of texts) { t.y -= 0.6; t.life--; }
   texts = texts.filter(t => t.life > 0);
@@ -622,6 +822,12 @@ function enterDoor(c) {
   if (SHOP_CHARS.has(c)) { SFX.door(); openShop(c); return; }
   const link = area.def.links[c];
   if (!link) return;
+  const gate = area.def.gate && area.def.gate[c];
+  if (gate === 'crowns' && G.p.crowns < CROWNS_NEEDED) {
+    msgThrottle('gate', `扉には3つのくぼみがある。守護者の王冠が必要なようだ。（${G.p.crowns} / ${CROWNS_NEEDED}）`, 'bad');
+    SFX.bad();
+    return;
+  }
   SFX.door();
   G.fade = { t: 0, dur: 30, cb: () => { loadArea(link[0], { door: link[1] }); msg(`${AREAS[link[0]].name}に入った。`); } };
 }
@@ -636,12 +842,17 @@ function updateWorld() {
   }
   if (pressed.cancel) { openPause(); return; }
   if (pressed.status || pressed.ok) { openStatus(); return; }
+  if (pressed.items) { openItems(); return; }
 
   G.time++;
   const p = G.p;
   updatePlayer();
   if (mode !== 'play' || G.fade) return; // 店に入った・死んだ・扉に入った
-  for (const e of enemies) if (!e.dead) updateEnemy(e);
+  if (G.freeze > 0) {
+    if (--G.freeze === 0) msg('止まっていた時が動き出した。');
+  } else {
+    for (const e of enemies) if (!e.dead) updateEnemy(e);
+  }
   enemies = enemies.filter(e => !e.dead);
   updateShots();
   updateEffects();
@@ -670,6 +881,16 @@ function updateWorld() {
 
 function playerDied() {
   if (mode !== 'play') return;
+  const p = G.p;
+  if (p.tools.revive > 0) {
+    p.tools.revive--;
+    p.hp = p.maxHp;
+    p.inv = 120;
+    SFX.heal();
+    burst(p.x + p.w / 2, p.y + p.h / 2, '#ffd84a', 30);
+    msg('命の霊薬が砕け散り、あなたはよみがえった！', 'info');
+    return;
+  }
   SFX.hurt();
   msg('あなたは力尽きた…', 'bad');
   updateHud();
@@ -702,6 +923,7 @@ function closeMenu(next) {
 }
 function renderMenu() {
   const d = menu.builder();
+  if (G && area) updateHud();
   menu.data = d;
   if (menu.sel >= d.items.length) menu.sel = d.items.length - 1;
   if (menu.sel < 0) menu.sel = 0;
@@ -745,7 +967,7 @@ function openTitle() {
   mode = 'title';
   openMenu(() => ({
     title: '地底の竜 -XANADU-like-',
-    text: '町の東にある地下迷宮の奥深く、\n伝説の竜が棲むという。\n剣を取り、竜を討て！',
+    text: '町の東にある地下迷宮の奥深く、\n伝説の竜が棲むという。\n3体の守護者から王冠を奪い、竜を討て！',
     cancelable: false,
     items: [
       { label: 'はじめから', action: () => { newGame(); return 'play'; } },
@@ -759,12 +981,14 @@ function openHowTo() {
   openMenu(() => ({
     title: '遊び方',
     text: [
-      '・敵には体当たりで攻撃する。武器は使うほど熟練度が上がり強くなる。',
-      '・経験値がたまったら町の「寺院」でレベルを上げてもらう。',
-      '・罪のない精霊を殺すとカルマが増え、寺院でレベルを上げてもらえなくなる。',
-      '・迷宮では時間とともに食料が減る。尽きるとHPが減っていく。',
-      '・宿屋で休むと全回復し、記録（セーブ）される。',
-      '・鍵のかかった扉は鍵で開く。鍵は迷宮で拾うか道具屋で買える。',
+      '・敵には体当たりで攻撃。武器・防具・魔法は使うほど熟練度が上がる。',
+      '・迷宮の魔物は倒すと二度と現れない。経験値と金は有限だ。',
+      '・王から授かった金を、訓練（能力）と装備のどちらに使うかはあなた次第。',
+      '・経験値がたまったら寺院でレベルを上げてもらう。',
+      '・罪なき精霊を殺すとカルマが増え、寺院でレベルを上げてもらえなくなる。',
+      '・迷宮では食料が減る。尽きるとHPが減っていく。',
+      '・つるはし（D キー）でレンガを掘れる。壁の向こうに隠し部屋があるかも…',
+      '・各層の守護者を倒して王冠を集めよ。3つそろえば竜の巣への扉が開く。',
       '・竜はドラゴンスレイヤーでしか斬れないという…',
     ].join('\n'),
     back: () => openTitle(),
@@ -779,6 +1003,7 @@ function openPause() {
     items: [
       { label: 'ゲームにもどる', action: () => 'close' },
       { label: 'ステータス', action: () => { openStatus(); } },
+      { label: '道具', action: () => { openItems(); } },
       { label: 'タイトルへ（記録していない進行は失われます）', action: () => { G = null; return 'title'; } },
     ],
   }), 'play');
@@ -790,15 +1015,16 @@ function fmtTime(frames) {
 }
 
 function statusText() {
-  const p = G.p, cw = curWeapon();
+  const p = G.p, cw = curWeapon(), sp = curSpell();
   return [
     `レベル ${p.level}　経験値 ${p.xp} / 次 ${needXp(p.level)}`,
     `HP ${p.hp}/${p.maxHp}　MP ${p.mp}/${p.maxMp}`,
-    `STR ${p.str}　DEF ${p.def}（合計防御 ${totalDef()}）　AGI ${p.agi}`,
-    `カルマ ${p.karma}　所持金 ${p.gold}G　食料 ${p.food}`,
-    `武器 ${WEAPONS[cw.id].name}（熟練Lv${weaponLevel(cw.exp)}）`,
-    `防具 ${ARMORS[p.armor].name}　盾 ${p.shield ? SHIELDS[p.shield].name : 'なし'}`,
-    `鍵 ${p.keys}　薬 ${p.potions}　魔法の水 ${p.elixirs}`,
+    `STR ${p.str}　DEF ${p.def}（合計防御 ${totalDef()}）　AGI ${p.agi}　INT ${p.int}`,
+    `カルマ ${p.karma}　所持金 ${p.gold}G　食料 ${p.food}　王冠 ${p.crowns}/${CROWNS_NEEDED}`,
+    `武器 ${WEAPONS[cw.id].name}（熟練Lv${profLevel(cw.exp)}）`,
+    `防具 ${ARMORS[p.armor].name}（Lv${profLevel(p.armorExp[p.armor] || 0)}）　盾 ${p.shield ? `${SHIELDS[p.shield].name}（Lv${profLevel(p.shieldExp[p.shield] || 0)}）` : 'なし'}`,
+    `魔法 ${SPELLS[sp.id].name}（熟練Lv${profLevel(sp.exp)}・威力${spellPower(sp)}）`,
+    `鍵 ${p.keys}　薬 ${p.potions}　魔法の水 ${p.elixirs}${p.lamp ? '　ランプ' : ''}`,
   ].join('\n');
 }
 
@@ -811,8 +1037,25 @@ function openStatus() {
       { label: '武器を持ちかえる', action: () => { openEquip('weapon'); } },
       { label: '鎧を着がえる', action: () => { openEquip('armor'); } },
       { label: '盾を持ちかえる', disabled: !p.shields.length, action: () => { openEquip('shield'); } },
-      { label: '薬を飲む', sub: `${p.potions}個`, disabled: !p.potions, action: () => { usePotion(); } },
-      { label: '魔法の水を飲む', sub: `${p.elixirs}個`, disabled: !p.elixirs, action: () => { useElixir(); } },
+      { label: '魔法を選ぶ', action: () => { openEquip('spell'); } },
+      { label: '道具', action: () => { openItems(); } },
+      { label: '閉じる', action: () => 'close' },
+    ],
+  }), 'play');
+}
+
+function openItems() {
+  const p = G.p;
+  openMenu(() => ({
+    title: '道具',
+    text: '使う道具を選んでください。',
+    items: [
+      { label: '薬', sub: `${p.potions}個`, disabled: !p.potions, action: () => { usePotion(); } },
+      { label: '魔法の水', sub: `${p.elixirs}個`, disabled: !p.elixirs, action: () => { useElixir(); } },
+      ...Object.entries(TOOLS).map(([id, t]) => ({
+        label: t.name, sub: `${p.tools[id]}個`, disabled: !p.tools[id],
+        action: () => (useTool(id) && id !== 'revive' ? 'close' : undefined),
+      })),
       { label: '閉じる', action: () => 'close' },
     ],
   }), 'play');
@@ -825,22 +1068,27 @@ function openEquip(kind) {
     if (kind === 'weapon') {
       items = p.weapons.map((w, i) => ({
         label: `${i === p.weapon ? 'E ' : '　'}${WEAPONS[w.id].name}`,
-        sub: `攻撃${WEAPONS[w.id].atk} 熟練Lv${weaponLevel(w.exp)}`,
+        sub: `攻撃${WEAPONS[w.id].atk} 熟練Lv${profLevel(w.exp)}`,
         action: () => { p.weapon = i; },
       }));
     } else if (kind === 'armor') {
       items = p.armors.map(id => ({
-        label: `${id === p.armor ? 'E ' : '　'}${ARMORS[id].name}`, sub: `防御${ARMORS[id].def}`,
+        label: `${id === p.armor ? 'E ' : '　'}${ARMORS[id].name}`, sub: `防御${ARMORS[id].def} 熟練Lv${profLevel(p.armorExp[id] || 0)}`,
         action: () => { p.armor = id; },
       }));
-    } else {
+    } else if (kind === 'shield') {
       items = p.shields.map(id => ({
-        label: `${id === p.shield ? 'E ' : '　'}${SHIELDS[id].name}`, sub: `防御${SHIELDS[id].def}`,
+        label: `${id === p.shield ? 'E ' : '　'}${SHIELDS[id].name}`, sub: `防御${SHIELDS[id].def} 熟練Lv${profLevel(p.shieldExp[id] || 0)}`,
         action: () => { p.shield = id; },
+      }));
+    } else {
+      items = p.spells.map((s, i) => ({
+        label: `${i === p.spell ? 'E ' : '　'}${SPELLS[s.id].name}`, sub: `MP${SPELLS[s.id].mp} 熟練Lv${profLevel(s.exp)}`,
+        action: () => { p.spell = i; },
       }));
     }
     items.push({ label: 'もどる', action: () => { openStatus(); } });
-    return { title: { weapon: '武器', armor: '鎧', shield: '盾' }[kind], items, back: () => openStatus() };
+    return { title: { weapon: '武器', armor: '鎧', shield: '盾', spell: '魔法' }[kind], items, back: () => openStatus() };
   }, 'play');
 }
 
@@ -858,11 +1106,34 @@ function openShop(c) {
     fn();
     SFX.coin();
   };
+  const limited = (n, label, fn) => () => {
+    if (n() >= MAX_ITEM) { shopTalk = `「${label}はもう持ちきれないよ。」`; SFX.bad(); return; }
+    fn();
+  };
 
-  if (c === 'W') {
+  if (c === 'K') {
+    openMenu(() => ({
+      title: '王城・訓練所',
+      text: wallet() + `\nSTR ${p.str}　DEF ${p.def}　AGI ${p.agi}　INT ${p.int}　最大HP ${p.maxHp}` +
+        (shopTalk ? talk() : '\n\n王「金は力にも、剣にもなる。限られた金をどう使うかは、そなた次第だ。」'),
+      items: Object.entries(TRAINING).map(([id, t]) => {
+        const cost = trainCost(id, p.train[id]);
+        return {
+          label: t.name, sub: `${cost}G`,
+          action: buy(cost, () => {
+            p.train[id]++;
+            if (id === 'hp') { p.maxHp += 10; p.hp += 10; }
+            else if (id === 'int') { p.int++; p.maxMp += 2; p.mp += 2; }
+            else p[id]++;
+            shopTalk = '教官「よし、その調子だ！」';
+          }),
+        };
+      }).concat([leave]),
+    }), 'play');
+  } else if (c === 'W') {
     openMenu(() => ({
       title: '武器屋「鋼の牙」',
-      text: wallet() + talk(),
+      text: wallet() + (shopTalk ? talk() : '\n\n「使い慣れた剣は、新しい名剣にも勝ることがあるぜ。」'),
       items: Object.entries(WEAPONS).filter(([, w]) => w.price > 0).map(([id, w]) => {
         const owned = p.weapons.some(x => x.id === id);
         return {
@@ -895,21 +1166,40 @@ function openShop(c) {
       })).concat([leave]),
     }), 'play');
   } else if (c === 'F') {
-    const limited = (n, label, fn) => () => {
-      if (n() >= MAX_ITEM) { shopTalk = `「${label}はもう持ちきれないよ。」`; SFX.bad(); return; }
-      fn();
-    };
+    const town = area.id === 'town';
     openMenu(() => ({
-      title: area.id === 'town' ? '道具屋「旅のそなえ」' : '地下の商人',
-      text: wallet() + `\n食料 ${p.food}　薬 ${p.potions}　魔法の水 ${p.elixirs}　鍵 ${p.keys}` + talk(),
+      title: town ? '道具屋「旅のそなえ」' : '地下の商人',
+      text: wallet() + `\n食料 ${p.food}　薬 ${p.potions}　魔法の水 ${p.elixirs}　鍵 ${p.keys}　つるはし ${p.tools.mattock}` +
+        (shopTalk ? talk() : '\n\n「迷宮の壁の向こうにはお宝が眠ってるって噂だ。つるはしはいかが？」'),
       items: [
         { label: '食料 ×20', sub: '15G', action: buy(15, () => { p.food = Math.min(MAX_FOOD, p.food + 20); shopTalk = '「腹が減っては戦はできぬ、だ。」'; }) },
         { label: '食料 ×100', sub: '60G', action: buy(60, () => { p.food = Math.min(MAX_FOOD, p.food + 100); shopTalk = '「たっぷり持っていきな。」'; }) },
         { label: '薬（HP回復）', sub: '30G', action: limited(() => p.potions, '薬', buy(30, () => { p.potions++; shopTalk = '「薬だね。」'; })) },
         { label: '魔法の水（MP全回復）', sub: '50G', action: limited(() => p.elixirs, '魔法の水', buy(50, () => { p.elixirs++; shopTalk = '「魔法の水だね。」'; })) },
         { label: '鍵', sub: '80G', action: limited(() => p.keys, '鍵', buy(80, () => { p.keys++; shopTalk = '「鍵は迷宮の扉を開けるのに使うんだ。」'; })) },
+        ...Object.entries(TOOLS).filter(([id]) => town || id !== 'revive').map(([id, t]) => ({
+          label: t.name, sub: `${t.price}G`,
+          action: limited(() => p.tools[id], t.name, buy(t.price, () => { p.tools[id]++; shopTalk = `「${t.desc}」`; })),
+        })),
         leave,
       ],
+    }), 'play');
+  } else if (c === 'S') {
+    openMenu(() => ({
+      title: '魔法屋「星読みの塔」',
+      text: wallet() + `\nINT ${p.int}（魔法の威力は INT とレベルで決まる）` + talk(),
+      items: Object.entries(SPELLS).filter(([, s]) => s.price > 0).map(([id, s]) => {
+        const owned = p.spells.some(x => x.id === id);
+        return {
+          label: s.name, sub: owned ? '習得済み' : `${s.desc}　MP${s.mp}　${s.price}G`, disabled: owned,
+          action: buy(s.price, () => {
+            p.spells.push({ id, exp: 0 });
+            p.spell = p.spells.length - 1;
+            shopTalk = `「${s.name}の呪文を授けよう。Q キーで魔法を切り替えられる。」`;
+            msg(`${s.name}の魔法を覚えた。`, 'good');
+          }),
+        };
+      }).concat([leave]),
     }), 'play');
   } else if (c === 'I') {
     const cost = 10 + p.level * 5;
@@ -942,8 +1232,7 @@ function openShop(c) {
             label: 'レベルを上げてもらう', disabled: p.xp < need,
             action: () => {
               if (p.karma > 0) { shopTalk = '「汝の業（カルマ）は深い…。今のままでは力を授けられぬ。」'; SFX.bad(); return; }
-              let n = 0;
-              while (p.xp >= needXp(p.level)) { levelUp(); n++; }
+              while (p.xp >= needXp(p.level)) levelUp();
               shopTalk = `「神の祝福を。汝はレベル ${p.level} となった。」`;
               msg(`レベルが ${p.level} に上がった！`, 'info');
               SFX.level();
@@ -968,6 +1257,7 @@ function levelUp() {
   p.str += 2;
   p.def += 1;
   p.agi += 1;
+  p.int += 1;
   p.hp = p.maxHp;
   p.mp = p.maxMp;
 }
@@ -975,9 +1265,10 @@ function levelUp() {
 function openEnding() {
   const p = G.p;
   SFX.level();
+  const killed = Object.keys(G.state.killed).length;
   openMenu(() => ({
     title: '— 竜は滅びた —',
-    text: `地の底を支配していた竜は倒れ、\n町に平和が戻った。\n\nレベル ${p.level}　所持金 ${p.gold}G　カルマ ${p.karma}\nプレイ時間 ${fmtTime(G.time)}\n\nTHANK YOU FOR PLAYING!`,
+    text: `地の底を支配していた竜は倒れ、\n町に平和が戻った。\n\nレベル ${p.level}　所持金 ${p.gold}G　カルマ ${p.karma}\n倒した魔物 ${killed}体　プレイ時間 ${fmtTime(G.time)}\n\nTHANK YOU FOR PLAYING!`,
     cancelable: false,
     items: [
       { label: 'このまま冒険を続ける', action: () => 'play' },
@@ -989,28 +1280,33 @@ function openEnding() {
 // ---------------------------------------------------------------- HUD
 function updateHud() {
   if (!G) { $hud.innerHTML = ''; return; }
-  const p = G.p, cw = curWeapon();
+  const p = G.p, cw = curWeapon(), sp = curSpell();
   const need = needXp(p.level);
   const pct = (a, b) => Math.max(0, Math.min(100, (a / b) * 100));
+  const left = remaining();
   $hud.innerHTML = `
   <div class="hud-row">
     <b>Lv ${p.level}</b>
     <span class="bar hp"><i style="width:${pct(p.hp, p.maxHp)}%"></i><em>HP ${p.hp}/${p.maxHp}</em></span>
     <span class="bar mp"><i style="width:${pct(p.mp, p.maxMp)}%"></i><em>MP ${p.mp}/${p.maxMp}</em></span>
     <span class="${p.xp >= need ? 'ready' : ''}">EXP ${p.xp}/${need}${p.xp >= need ? '（寺院へ）' : ''}</span>
-    <span>${area.def.name}</span>
+    <span>${area.def.name}${area.total ? `（魔物 残り ${left}/${area.total}）` : ''}</span>
   </div>
   <div class="hud-row">
     <span>金 ${p.gold}G</span>
     <span class="${p.food <= 10 ? 'warn' : ''}">食料 ${p.food}</span>
     <span class="${p.karma > 0 ? 'warn' : ''}">カルマ ${p.karma}</span>
+    <span>王冠 ${p.crowns}/${CROWNS_NEEDED}</span>
     <span>鍵 ${p.keys}</span><span>薬 ${p.potions}</span><span>魔法の水 ${p.elixirs}</span>
-    <span>STR ${p.str} DEF ${totalDef()} AGI ${p.agi}</span>
+    <span>つるはし ${p.tools.mattock}</span>
+    <span>STR ${p.str} DEF ${totalDef()} AGI ${p.agi} INT ${p.int}</span>
   </div>
   <div class="hud-row">
-    <span>武器 ${WEAPONS[cw.id].name}（熟練Lv${weaponLevel(cw.exp)}）</span>
+    <span>武器 ${WEAPONS[cw.id].name}（熟練Lv${profLevel(cw.exp)}）</span>
     <span>防具 ${ARMORS[p.armor].name}</span>
     <span>盾 ${p.shield ? SHIELDS[p.shield].name : 'なし'}</span>
+    <span>魔法 ${SPELLS[sp.id].name}（Lv${profLevel(sp.exp)}）</span>
+    ${G.freeze > 0 ? '<span class="ready">時間停止中</span>' : ''}
   </div>`;
 }
 
@@ -1021,8 +1317,9 @@ const THEMES = {
   ice:  { bgc: '#0a0e18', brick: '#4a6488', mortar: '#1e2a40', hi: '#6a88b0', stone: '#5a6a80', stoneDark: '#2a3448', back: '#18223a', backLine: '#101828' },
   deep: { bgc: '#0e0814', brick: '#6a3a7a', mortar: '#2a1236', hi: '#8a5a9a', stone: '#5a4a68', stoneDark: '#2e2238', back: '#1e1028', backLine: '#140a1c' },
   lair: { bgc: '#140404', brick: '#8a2a1a', mortar: '#3a0e08', hi: '#b04424', stone: '#6a3a30', stoneDark: '#3a1a14', back: '#2a0c08', backLine: '#1c0604' },
+  room: { bgc: '#000', brick: '#5a5a6a', mortar: '#2a2a34', hi: '#7a7a8c', stone: '#5a5a6a', stoneDark: '#2a2a34', back: '#3a3428', backLine: '#2a2418' },
 };
-const SHOP_SIGNS = { W: '武', A: '防', F: '道', I: '宿', T: '寺' };
+const SHOP_SIGNS = { K: '王', W: '武', A: '防', F: '道', S: '魔', I: '宿', T: '寺' };
 
 const tileCache = {};
 function tileImage(theme, key, drawFn) {
@@ -1051,6 +1348,12 @@ function drawBackWall(g, th) {
   g.fillRect(0, 15, T, 1); g.fillRect(0, 31, T, 1);
   g.fillRect(8, 0, 1, 15); g.fillRect(24, 16, 1, 15);
 }
+function drawFloor(g, th) {
+  g.fillStyle = th.back; g.fillRect(0, 0, T, T);
+  g.fillStyle = th.backLine;
+  g.fillRect(0, 0, T, 1); g.fillRect(0, 0, 1, T);
+  g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(1, 1, 15, 15); g.fillRect(17, 17, 14, 14);
+}
 
 function bgKey(ch) {
   // 背景の上に描く記号は、まず背景を描く
@@ -1063,6 +1366,19 @@ function drawTile(ch, tx, ty, sx, sy) {
   const T2 = THEMES[th];
   if (ch === ' ') return;
   if (ch === '#') {
+    if (th === 'room') { // 見下ろし視点の壁：上面と側面
+      const face = !isSolid(tx, ty + 1);
+      ctx.drawImage(tileImage(th, '#' + (face ? 'f' : ''), g => {
+        g.fillStyle = '#4a4a58'; g.fillRect(0, 0, T, T);
+        g.fillStyle = '#5c5c6c'; g.fillRect(2, 2, T - 4, T - 4);
+        if (face) {
+          drawBricks(g, '#6a6a7a', '#34343e', '#8a8a9a');
+          g.fillStyle = '#5c5c6c';
+          g.fillRect(0, 0, T, 12);
+        }
+      }), sx, sy);
+      return;
+    }
     const top = !isSolid(tx, ty - 1);
     ctx.drawImage(tileImage(th, '#' + (top ? 't' : ''), g => {
       drawBricks(g, T2.brick, T2.mortar, T2.hi);
@@ -1086,15 +1402,26 @@ function drawTile(ch, tx, ty, sx, sy) {
         g.fillStyle = T2.backLine; g.fillRect(0, 0, T, 2); g.fillRect(0, 0, 2, T); g.fillRect(15, 0, 2, T);
       }), sx, sy);
       if (tile(tx, ty - 1) !== '.') { // 屋根
-        ctx.fillStyle = '#a03828';
-        ctx.fillRect(sx - 4, sy - 10, T + 8, 12);
-        ctx.fillStyle = '#c04838';
-        ctx.fillRect(sx - 4, sy - 10, T + 8, 3);
+        const castle = tile(tx, ty + 5) === 'K' || tile(tx - 1, ty + 5) === 'K' || tile(tx - 2, ty + 5) === 'K' ||
+          tile(tx + 1, ty + 5) === 'K' || tile(tx + 2, ty + 5) === 'K' || tile(tx + 3, ty + 5) === 'K';
+        if (castle) { // 王城は城壁の凸凹
+          ctx.fillStyle = '#9a9aa8';
+          ctx.fillRect(sx, sy - 8, T, 10);
+          ctx.fillStyle = '#c8c8d4';
+          ctx.fillRect(sx + 2, sy - 16, 12, 8); ctx.fillRect(sx + 18, sy - 16, 12, 8);
+        } else {
+          ctx.fillStyle = '#a03828';
+          ctx.fillRect(sx - 4, sy - 10, T + 8, 12);
+          ctx.fillStyle = '#c04838';
+          ctx.fillRect(sx - 4, sy - 10, T + 8, 3);
+        }
       } else if (tile(tx, ty + 1) === '.' && (tx % 3 !== 1)) { // 窓
         ctx.fillStyle = '#4a3420'; ctx.fillRect(sx + 7, sy + 8, 18, 16);
         ctx.fillStyle = '#ffe38a'; ctx.fillRect(sx + 9, sy + 10, 6, 5); ctx.fillRect(sx + 17, sy + 10, 6, 5);
         ctx.fillRect(sx + 9, sy + 17, 6, 5); ctx.fillRect(sx + 17, sy + 17, 6, 5);
       }
+    } else if (th === 'room') {
+      ctx.drawImage(tileImage(th, '.', g => drawFloor(g, T2)), sx, sy);
     } else {
       ctx.drawImage(tileImage(th, '.', g => drawBackWall(g, T2)), sx, sy);
     }
@@ -1129,17 +1456,27 @@ function drawTile(ch, tx, ty, sx, sy) {
     ctx.fillStyle = '#2a2a34'; ctx.fillRect(sx + 2, sy + 12, T - 4, 4);
     if (tile(tx, ty + 1) !== '+') { ctx.fillStyle = '#ffd84a'; ctx.fillRect(sx + 13, sy + 4, 6, 6); ctx.fillStyle = '#000'; ctx.fillRect(sx + 15, sy + 6, 2, 4); }
   } else if (/[a-h]/.test(ch)) {
-    ctx.fillStyle = '#000'; ctx.fillRect(sx + 3, sy + 2, T - 6, T - 2);
-    ctx.fillStyle = '#6a4220'; ctx.fillRect(sx + 6, sy + 6, T - 12, T - 6);
-    ctx.fillStyle = '#4a2a10'; ctx.fillRect(sx + 15, sy + 6, 2, T - 6);
-    ctx.fillStyle = '#ffd84a'; ctx.fillRect(sx + 19, sy + 18, 3, 3);
+    const gated = area.def.gate && area.def.gate[ch];
+    if (isTop()) { // 見下ろし視点では下り階段
+      ctx.fillStyle = '#000'; ctx.fillRect(sx + 2, sy + 2, T - 4, T - 4);
+      ctx.fillStyle = '#8a8070';
+      for (let i = 0; i < 4; i++) ctx.fillRect(sx + 4 + i * 3, sy + 4 + i * 6, T - 8 - i * 6, 3);
+    } else {
+      ctx.fillStyle = '#000'; ctx.fillRect(sx + 3, sy + 2, T - 6, T - 2);
+      ctx.fillStyle = gated ? '#7a1a1a' : ch === 'e' ? '#3a3a6a' : '#6a4220'; ctx.fillRect(sx + 6, sy + 6, T - 12, T - 6);
+      ctx.fillStyle = '#4a2a10'; ctx.fillRect(sx + 15, sy + 6, 2, T - 6);
+      ctx.fillStyle = '#ffd84a'; ctx.fillRect(sx + 19, sy + 18, 3, 3);
+      if (gated) { // 王冠のくぼみ
+        for (let i = 0; i < CROWNS_NEEDED; i++) { ctx.fillStyle = i < G.p.crowns ? '#ffd84a' : '#2a0a0a'; ctx.fillRect(sx + 8 + i * 6, sy + 9, 4, 4); }
+      }
+    }
     // 上向き矢印（↑で入れる）
     if (Math.floor(G.time / 30) % 2 === 0 && Math.abs(G.p.x + G.p.w / 2 - (sx + cam.x + 16)) < 24 && Math.abs(G.p.y - (sy + cam.y)) < 32) {
-      ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('↑', sx + 16, sy - 6);
+      ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(isTop() ? 'Z' : '↑', sx + 16, sy - 6);
     }
   } else if (SHOP_CHARS.has(ch)) {
     ctx.fillStyle = '#3a2410'; ctx.fillRect(sx + 4, sy + 4, T - 8, T - 4);
-    ctx.fillStyle = '#8a5a2a'; ctx.fillRect(sx + 7, sy + 7, T - 14, T - 7);
+    ctx.fillStyle = ch === 'K' ? '#5a2a8a' : '#8a5a2a'; ctx.fillRect(sx + 7, sy + 7, T - 14, T - 7);
     ctx.fillStyle = '#ffd84a'; ctx.fillRect(sx + 19, sy + 19, 3, 3);
     // 看板
     ctx.fillStyle = '#2a1a0a'; ctx.fillRect(sx + 4, sy - 26, T - 8, 22);
@@ -1167,6 +1504,28 @@ function drawSpr(name, x, y, faceRight, scale = 2) {
   if (!s) return;
   ctx.drawImage(faceRight ? s.r : s.l, Math.round(x), Math.round(y), 16 * scale, 16 * scale);
 }
+
+// 暗闇（第3層）：プレイヤーの周りだけ見える。ランプがあれば広く見える
+const darkCv = document.createElement('canvas');
+darkCv.width = VW; darkCv.height = VH;
+function drawDarkness() {
+  const p = G.p, d = darkCv.getContext('2d');
+  const x = p.x + p.w / 2 - cam.x, y = p.y + p.h / 2 - cam.y;
+  const r = (p.lamp ? 230 : 90) + Math.sin(G.time / 7) * 3;
+  d.globalCompositeOperation = 'source-over';
+  d.clearRect(0, 0, VW, VH);
+  d.fillStyle = 'rgba(0,0,0,0.96)';
+  d.fillRect(0, 0, VW, VH);
+  d.globalCompositeOperation = 'destination-out';
+  const grd = d.createRadialGradient(x, y, r * 0.35, x, y, r);
+  grd.addColorStop(0, 'rgba(0,0,0,1)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  d.fillStyle = grd;
+  d.fillRect(0, 0, VW, VH);
+  ctx.drawImage(darkCv, 0, 0);
+}
+
+const ITEM_SPR = { '$': 'gold', '!': 'potion', '*': 'elixir', '?': 'key', '%': 'food', '&': 'slayer', m: 'mattock', G: 'wing', Q: 'hourglass', R: 'revive', L: 'lamp' };
 
 function render() {
   ctx.textAlign = 'left';
@@ -1200,30 +1559,27 @@ function render() {
     }
   }
   // アイテム
-  const sprOf = { '$': 'gold', '!': 'potion', '*': 'elixir', '?': 'key', '%': 'food', '&': 'slayer' };
   for (const it of items) {
     const bob = Math.sin(G.time / 15 + it.bob) * 2;
-    if (it.ch === '&') {
-      ctx.fillStyle = `rgba(128,224,255,${0.25 + Math.sin(G.time / 10) * 0.15})`;
+    if (it.ch === '&' || it.ch === 'L') {
+      ctx.fillStyle = it.ch === 'L' ? `rgba(255,216,74,${0.25 + Math.sin(G.time / 10) * 0.15})` : `rgba(128,224,255,${0.25 + Math.sin(G.time / 10) * 0.15})`;
       ctx.beginPath(); ctx.arc(it.x + 12 - cam.x, it.y + 14 - cam.y, 20, 0, Math.PI * 2); ctx.fill();
     }
-    drawSpr(sprOf[it.ch], it.x - 4 - cam.x, it.y - 4 + bob - cam.y, true);
+    drawSpr(ITEM_SPR[it.ch], it.x - 4 - cam.x, it.y - 4 + bob - cam.y, true);
   }
   // 敵
   for (const e of enemies) {
     if (e.flash && e.flash % 2) continue;
     if (e.peaceful) ctx.globalAlpha = 0.7;
-    if (e.boss) {
-      drawSpr('dragon', e.x + e.w / 2 - 32 - cam.x, e.y + e.h - 64 + 6 - cam.y, e.dir > 0, 4);
-    } else {
-      let name = e.spr;
-      if (name === 'bat') name = Math.floor(e.t / 8) % 2 ? 'bat0' : 'bat1';
-      const sq = name === 'slime' ? Math.sin(e.t / 6) : 0;
-      drawSpr(name, e.x + e.w / 2 - 16 - cam.x, e.y + e.h - 32 + sq - cam.y, e.dir > 0);
-    }
+    let name = e.spr;
+    if (name === 'bat') name = Math.floor(e.t / 8) % 2 ? 'bat0' : 'bat1';
+    const size = 16 * e.scale;
+    const sq = (name === 'slime' || name === 'kingslime') ? Math.sin(e.t / 6) * (e.scale / 2) : 0;
+    const yoff = e.boss ? 6 : 0;
+    drawSpr(name, e.x + e.w / 2 - size / 2 - cam.x, e.y + e.h - size + yoff + sq - cam.y, e.dir > 0, e.scale);
     ctx.globalAlpha = 1;
     if (!e.peaceful && e.hp < e.maxHp) {
-      const bw = e.boss ? 60 : 24;
+      const bw = e.boss || e.guardian ? 60 : 24;
       const bx = e.x + e.w / 2 - bw / 2 - cam.x, by = e.y - 8 - cam.y;
       ctx.fillStyle = '#000'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
       ctx.fillStyle = '#e04050'; ctx.fillRect(bx, by, bw * Math.max(0, e.hp) / e.maxHp, 3);
@@ -1232,16 +1588,23 @@ function render() {
   // プレイヤー
   const p = G.p;
   if (!(p.inv > 0 && Math.floor(p.inv / 3) % 2)) {
-    const frame = p.climb ? (Math.floor(p.anim / 8) % 2) : (p.onGround && p.vx ? Math.floor(p.anim / 8) % 2 : 0);
+    const moving = isTop() ? (keys.left || keys.right || keys.up || keys.down) : (p.onGround && p.vx);
+    const frame = p.climb || moving ? Math.floor(p.anim / 8) % 2 : 0;
     const face = p.climb ? Math.floor(p.anim / 8) % 2 === 0 : p.dir > 0;
     drawSpr(frame ? 'hero1' : 'hero0', p.x + p.w / 2 - 16 - cam.x, p.y + p.h - 32 - cam.y, face);
   }
   // 弾
   for (const s of shots) {
     const x = s.x + 6 - cam.x, y = s.y + 6 - cam.y;
-    ctx.fillStyle = s.friendly ? 'rgba(80,160,255,0.5)' : 'rgba(255,120,30,0.5)';
+    if (s.kind === 'needle') {
+      ctx.strokeStyle = '#e0ffff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - s.vx * 2, y - s.vy * 2); ctx.lineTo(x + s.vx, y + s.vy); ctx.stroke();
+      continue;
+    }
+    const col = !s.friendly ? ['rgba(255,120,30,0.5)', '#ffe080'] : s.kind === 'thunder' ? ['rgba(255,240,80,0.5)', '#ffffc0'] : ['rgba(80,160,255,0.5)', '#c0e8ff'];
+    ctx.fillStyle = col[0];
     ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = s.friendly ? '#c0e8ff' : '#ffe080';
+    ctx.fillStyle = col[1];
     ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
   }
   // パーティクル
@@ -1257,6 +1620,7 @@ function render() {
       ctx.globalAlpha = 1;
     }
   }
+  if (area.def.dark) drawDarkness();
   // ダメージ表示
   ctx.font = `bold 14px ${FONT}`; ctx.textAlign = 'center';
   for (const t of texts) {
@@ -1264,6 +1628,11 @@ function render() {
     ctx.fillStyle = t.color; ctx.fillText(t.text, t.x - cam.x, t.y - cam.y);
   }
   ctx.textAlign = 'left';
+  // 時間停止
+  if (G.freeze > 0) {
+    ctx.fillStyle = 'rgba(80,120,255,0.15)';
+    ctx.fillRect(0, 0, VW, VH);
+  }
   // フェード
   if (G.fade) {
     const h = G.fade.dur / 2;
