@@ -14,21 +14,25 @@
   }
   function release(k) { keys[k] = false; }
 
+  function eachTouch(e, fn) {
+    for (let i = 0; i < e.changedTouches.length; i++) fn(e.changedTouches[i]);
+  }
+
   // el に「押した・動かした・離した」を、タッチとマウスの両方から届ける
   function bind(el, { down, move, up }) {
     const active = new Set(); // 押している指（touch の identifier、マウスは 'mouse'）
     const opts = { passive: false };
     el.addEventListener('touchstart', e => {
       e.preventDefault();
-      for (const t of e.changedTouches) { active.add(t.identifier); down(t.clientX, t.clientY, t.identifier); }
+      eachTouch(e, t => { active.add(t.identifier); down(t.clientX, t.clientY, t.identifier); });
     }, opts);
     el.addEventListener('touchmove', e => {
       e.preventDefault();
-      for (const t of e.changedTouches) if (active.has(t.identifier)) move(t.clientX, t.clientY, t.identifier);
+      eachTouch(e, t => { if (active.has(t.identifier)) move(t.clientX, t.clientY, t.identifier); });
     }, opts);
     const end = e => {
       e.preventDefault();
-      for (const t of e.changedTouches) if (active.delete(t.identifier)) up(t.identifier);
+      eachTouch(e, t => { if (active.delete(t.identifier)) up(t.identifier); });
     };
     el.addEventListener('touchend', end, opts);
     el.addEventListener('touchcancel', end, opts);

@@ -78,18 +78,23 @@ body.touch #tr { order: 2; flex-direction: column; align-items: flex-end; gap: 8
 
 #dpad {
   position: relative; width: 128px; height: 128px; border-radius: 50%;
-  background: radial-gradient(circle, #2a2a40 0 30%, #1a1a2c 31%);
-  border: 2px solid #4a4a6a; touch-action: none;
+  background: #24243c; border: 3px solid #8080b8; touch-action: none;
+  box-sizing: border-box;
 }
 #dpad span {
-  position: absolute; width: 44px; height: 44px; line-height: 44px; text-align: center;
-  color: #c8c8e0; font-size: 18px; border-radius: 10px; pointer-events: none;
+  position: absolute; width: 40px; height: 40px; line-height: 38px; text-align: center;
+  color: #fff; font-size: 18px; border-radius: 8px; pointer-events: none;
+  background: #3c3c64; border: 1px solid #9a9ad0; box-sizing: border-box;
 }
-#dpad span.on { background: #4a4aa0; color: #fff; }
-#dpad [data-dir="up"] { left: 42px; top: 4px; }
-#dpad [data-dir="down"] { left: 42px; bottom: 4px; }
-#dpad [data-dir="left"] { left: 4px; top: 42px; }
-#dpad [data-dir="right"] { right: 4px; top: 42px; }
+#dpad::after { /* 十字の中心 */
+  content: ''; position: absolute; left: 50%; top: 50%; width: 40px; height: 40px;
+  margin: -20px 0 0 -20px; background: #3c3c64; pointer-events: none;
+}
+#dpad span.on { background: #7070e0; border-color: #fff; }
+#dpad [data-dir="up"] { left: 41px; top: 2px; }
+#dpad [data-dir="down"] { left: 41px; bottom: 2px; }
+#dpad [data-dir="left"] { left: 2px; top: 41px; }
+#dpad [data-dir="right"] { right: 2px; top: 41px; }
 
 .trow { display: flex; gap: 6px; align-items: center; }
 .tcol { display: flex; flex-direction: column; gap: 6px; }
@@ -134,20 +139,21 @@ body.touch .mclose {
     height: calc(100vh - 8px);
     height: calc(100dvh - 8px);
   }
-  body.touch #tl, body.touch #tr { position: fixed; bottom: calc(6px + env(safe-area-inset-bottom)); z-index: 5; padding: 0; opacity: 0.6; }
+  body.touch #tl, body.touch #tr { position: fixed; bottom: calc(6px + env(safe-area-inset-bottom)); z-index: 5; padding: 0; opacity: 0.75; }
   body.touch #tl { left: calc(6px + env(safe-area-inset-left)); }
   body.touch #tr { right: calc(6px + env(safe-area-inset-right)); }
   body.touch .trow.small { flex-wrap: wrap; justify-content: flex-end; width: 130px; }
-  body.touch #dpad { background: radial-gradient(circle, rgba(42,42,64,0.5) 0 30%, rgba(26,26,44,0.35) 31%); }
+  body.touch #dpad { background: rgba(36,36,60,0.6); }
 }
 
 /* 幅の狭いスマホ（iPhone SE など）でもボタンが十字キーの横に収まるよう縮める */
 @media (max-width: 380px) {
   body.touch #wrap { padding-left: 4px; padding-right: 4px; }
   body.touch #dpad { width: 112px; height: 112px; }
-  body.touch #dpad span { width: 38px; height: 38px; line-height: 38px; font-size: 16px; }
-  body.touch #dpad [data-dir="up"], body.touch #dpad [data-dir="down"] { left: 37px; }
-  body.touch #dpad [data-dir="left"], body.touch #dpad [data-dir="right"] { top: 37px; }
+  body.touch #dpad span { width: 36px; height: 36px; line-height: 34px; font-size: 16px; }
+  body.touch #dpad::after { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+  body.touch #dpad [data-dir="up"], body.touch #dpad [data-dir="down"] { left: 35px; }
+  body.touch #dpad [data-dir="left"], body.touch #dpad [data-dir="right"] { top: 35px; }
   body.touch .trow { gap: 5px; }
   body.touch .tcol { gap: 5px; }
   body.touch .tbtn.s { width: 34px; height: 30px; font-size: 12px; }
