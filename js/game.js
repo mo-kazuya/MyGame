@@ -45,6 +45,7 @@ let actx = null;
 function tone(freq, dur = 0.08, type = 'square', vol = 0.05, slide = 0, delay = 0) {
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
     const t0 = actx.currentTime + delay;
     const o = actx.createOscillator(), g = actx.createGain();
     o.type = type;
@@ -933,13 +934,28 @@ function renderMenu() {
     <ul>${d.items.map((it, i) => `<li data-i="${i}" class="${i === menu.sel ? 'sel' : ''} ${it.disabled ? 'dis' : ''}">
       <span>${it.label}</span>${it.sub ? `<small>${it.sub}</small>` : ''}</li>`).join('')}</ul>
     <div class="mfoot">↑↓ 選択　Z・Enter 決定${d.cancelable === false ? '' : '　X・Esc 戻る'}</div>
+    ${d.cancelable === false ? '' : '<button class="mclose" aria-label="戻る">×</button>'}
   </div>`;
   $menu.classList.remove('hidden');
   $menu.querySelectorAll('li').forEach(li => {
     const i = +li.dataset.i;
-    li.addEventListener('mouseenter', () => { if (menu && menu.sel !== i) { menu.sel = i; renderMenu(); } });
+    // 作り直すとタップが消えるので、選択の見た目だけ切り替える
+    li.addEventListener('mouseenter', () => { if (menu && menu.sel !== i) { menu.sel = i; updateMenuSel(); } });
     li.addEventListener('click', () => { if (menu) { menu.sel = i; chooseMenu(); } });
   });
+  const close = $menu.querySelector('.mclose');
+  if (close) close.addEventListener('click', () => { if (menu) cancelMenu(); });
+  updateMenuSel();
+}
+function updateMenuSel() {
+  $menu.querySelectorAll('li').forEach(li => {
+    const on = +li.dataset.i === menu.sel;
+    li.classList.toggle('sel', on);
+    if (on) li.scrollIntoView({ block: 'nearest' });
+  });
+}
+function cancelMenu() {
+  if (menu.data.back) menu.data.back(); else closeMenu();
 }
 function chooseMenu() {
   const it = menu.data.items[menu.sel];
@@ -955,12 +971,10 @@ function chooseMenu() {
 function menuInput() {
   if (!menu) return;
   const n = menu.data.items.length;
-  if (pressed.up) { menu.sel = (menu.sel + n - 1) % n; SFX.select(); renderMenu(); }
-  if (pressed.down) { menu.sel = (menu.sel + 1) % n; SFX.select(); renderMenu(); }
+  if (pressed.up) { menu.sel = (menu.sel + n - 1) % n; SFX.select(); updateMenuSel(); }
+  if (pressed.down) { menu.sel = (menu.sel + 1) % n; SFX.select(); updateMenuSel(); }
   if (pressed.jump || pressed.ok) chooseMenu();
-  else if ((pressed.magic || pressed.cancel) && menu.data.cancelable !== false) {
-    if (menu.data.back) menu.data.back(); else closeMenu();
-  }
+  else if ((pressed.magic || pressed.cancel) && menu.data.cancelable !== false) cancelMenu();
 }
 
 function openTitle() {
@@ -1644,6 +1658,28 @@ function render() {
     ctx.fillStyle = `rgba(255,0,0,${0.08 + Math.sin(G.time / 10) * 0.05})`;
     ctx.fillRect(0, 0, VW, VH);
   }
+  if (document.body.classList.contains('touch')) drawMiniHud();
+}
+
+// スマホでは HUD が画面外になりやすいので、画面の左上にも最低限の情報を出す
+function drawMiniHud() {
+  const p = G.p;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(4, 4, 262, 58);
+  ctx.font = `bold 16px ${FONT}`; ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`Lv${p.level}`, 10, 26);
+  const bar = (y, v, max, col) => {
+    ctx.fillStyle = '#222'; ctx.fillRect(56, y, 150, 10);
+    ctx.fillStyle = col; ctx.fillRect(56, y, 150 * Math.max(0, v) / max, 10);
+  };
+  bar(11, p.hp, p.maxHp, '#e04050');
+  bar(26, p.mp, p.maxMp, '#4080f0');
+  ctx.fillStyle = '#fff'; ctx.font = `13px ${FONT}`;
+  ctx.fillText(`${p.hp}`, 212, 21);
+  ctx.fillText(`${p.mp}`, 212, 36);
+  ctx.fillStyle = p.food <= 10 ? '#ff6060' : '#ffd84a';
+  ctx.fillText(`${p.gold}G  食料${p.food}  鍵${p.keys}  王冠${p.crowns}`, 10, 56);
 }
 
 let titleT = 0;
