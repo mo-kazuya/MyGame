@@ -67,13 +67,14 @@ body {
 #stage { order: 0; }
 .tpad, #thelp, .mclose { display: none; }
 
-body.touch { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+body.touch { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 body.touch #wrap { padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
 body.touch #help { display: none; }
 body.touch #thelp { display: block; margin-top: 6px; font-size: 12px; color: #9a9ab0; line-height: 1.5; }
 body.touch .tpad { display: flex; touch-action: none; }
-body.touch #tl { order: 1; padding: 8px 0 0 4px; }
-body.touch #tr { order: 2; flex-direction: column; align-items: flex-end; gap: 8px; padding: 8px 4px 0 0; }
+body.touch #play { flex-wrap: wrap; }
+body.touch #tl { order: 1; padding: 8px 0 0 0; flex: 0 0 auto; }
+body.touch #tr { order: 2; flex-direction: column; align-items: flex-end; gap: 8px; padding: 8px 0 0 0; flex: 0 0 auto; }
 
 #dpad {
   position: relative; width: 128px; height: 128px; border-radius: 50%;
@@ -93,6 +94,7 @@ body.touch #tr { order: 2; flex-direction: column; align-items: flex-end; gap: 8
 .trow { display: flex; gap: 6px; align-items: center; }
 .tcol { display: flex; flex-direction: column; gap: 6px; }
 .tbtn {
+  -webkit-appearance: none; appearance: none; margin: 0; box-sizing: border-box;
   font-family: inherit; color: #fff; border: 2px solid #4a4a6a; background: #22223a;
   border-radius: 50%; touch-action: none; padding: 0; line-height: 1.1;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -112,6 +114,7 @@ body.touch .mbox li { padding: 8px 6px 8px 22px; }
 body.touch .mbox .mfoot { display: none; }
 body.touch .mclose {
   display: block; position: absolute; top: 6px; right: 8px; width: 36px; height: 36px;
+  -webkit-appearance: none; appearance: none; padding: 0;
   font-size: 22px; color: #fff; background: #24246a; border: 2px solid #e8e8f0; border-radius: 6px;
   font-family: inherit;
 }
@@ -122,17 +125,32 @@ body.touch .mclose {
   #log { font-size: 12px; min-height: 0; }
 }
 
-/* 横向きのスマホ：十字キー｜画面｜ボタン の3列 */
+/* 横向きのスマホ：ゲーム画面を高さいっぱいに出し、操作部は左右の下に半透明で重ねる */
 @media (orientation: landscape) and (max-height: 600px) {
-  body.touch #wrap { max-width: none; padding: 4px calc(8px + env(safe-area-inset-right)) 4px calc(8px + env(safe-area-inset-left)); }
-  body.touch #play { flex-wrap: nowrap; }
-  body.touch #tl { order: 0; padding: 0; }
+  body.touch #wrap { max-width: none; padding: 4px calc(4px + env(safe-area-inset-right)) 4px calc(4px + env(safe-area-inset-left)); }
+  body.touch #play { flex-wrap: nowrap; justify-content: center; }
   body.touch #stage {
-    order: 1; flex: 0 0 auto;
-    height: min(calc(100vh - 12px), calc((100vw - 330px) * 0.65));
-    height: min(calc(100dvh - 12px), calc((100vw - 330px) * 0.65));
-    width: auto;
+    order: 1; flex: 0 0 auto; width: auto; max-width: 100%;
+    height: calc(100vh - 8px);
+    height: calc(100dvh - 8px);
   }
-  body.touch #tr { order: 2; padding: 0; }
+  body.touch #tl, body.touch #tr { position: fixed; bottom: calc(6px + env(safe-area-inset-bottom)); z-index: 5; padding: 0; opacity: 0.6; }
+  body.touch #tl { left: calc(6px + env(safe-area-inset-left)); }
+  body.touch #tr { right: calc(6px + env(safe-area-inset-right)); }
   body.touch .trow.small { flex-wrap: wrap; justify-content: flex-end; width: 130px; }
+  body.touch #dpad { background: radial-gradient(circle, rgba(42,42,64,0.5) 0 30%, rgba(26,26,44,0.35) 31%); }
+}
+
+/* 幅の狭いスマホ（iPhone SE など）でもボタンが十字キーの横に収まるよう縮める */
+@media (max-width: 380px) {
+  body.touch #wrap { padding-left: 4px; padding-right: 4px; }
+  body.touch #dpad { width: 112px; height: 112px; }
+  body.touch #dpad span { width: 38px; height: 38px; line-height: 38px; font-size: 16px; }
+  body.touch #dpad [data-dir="up"], body.touch #dpad [data-dir="down"] { left: 37px; }
+  body.touch #dpad [data-dir="left"], body.touch #dpad [data-dir="right"] { top: 37px; }
+  body.touch .trow { gap: 5px; }
+  body.touch .tcol { gap: 5px; }
+  body.touch .tbtn.s { width: 34px; height: 30px; font-size: 12px; }
+  body.touch .tbtn.m { width: 42px; height: 38px; font-size: 12px; }
+  body.touch .tbtn.l { width: 56px; height: 56px; font-size: 14px; }
 }
