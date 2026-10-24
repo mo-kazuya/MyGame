@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2';
-const VERSION = '1.5'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '1.6'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -129,11 +129,19 @@ function newGame() {
 function hasSave() {
   try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
 }
-function saveGame() {
+// here=true ならその場所で記録（どこでもセーブ）。false なら宿屋の前から再開する記録
+function saveGame(here) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ p: G.p, state: G.state, time: G.time }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ p: G.p, state: G.state, time: G.time, at: here ? area.id : null }));
     return true;
   } catch (e) { return false; }
+}
+function saveInfo() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!d) return '';
+    return `Lv${d.p.level}　${AREAS[d.at] ? AREAS[d.at].name : '宿屋'}　${fmtTime(d.time || 0)}`;
+  } catch (e) { return ''; }
 }
 function loadGame() {
   try {
@@ -142,8 +150,13 @@ function loadGame() {
     G = { p: Object.assign(newPlayer(), d.p), state: Object.assign(newState(), d.state), time: d.time || 0,
           fade: null, endTimer: 0, xpNotice: 0, freeze: 0 };
     logLines.length = 0;
-    loadArea('town', { door: 'I' });
-    msg('宿屋で目を覚ました。', 'info');
+    if (d.at && AREAS[d.at]) {
+      loadArea(d.at, { pos: { x: d.p.x, y: d.p.y, climb: d.p.climb } });
+      msg('記録した場所から冒険を再開した。', 'info');
+    } else {
+      loadArea('town', { door: 'I' });
+      msg('宿屋で目を覚ました。', 'info');
+    }
     return true;
   } catch (e) { return false; }
 }
@@ -208,6 +221,7 @@ function loadArea(id, entry) {
   p.x = tx * T + (T - p.w) / 2;
   p.y = ty * T + T - p.h;
   p.vx = p.vy = 0; p.climb = false; p.onGround = true;
+  if (entry.pos) { p.x = entry.pos.x; p.y = entry.pos.y; p.climb = !!entry.pos.climb; p.onGround = false; }
   snapCamera();
   if (!G.state.visited[id]) {
     G.state.visited[id] = true;
@@ -909,7 +923,7 @@ function playerDied() {
     text: 'あなたは地の底で力尽きた…',
     cancelable: false,
     items: [
-      { label: '宿屋の記録から再開', disabled: !hasSave(), action: () => (loadGame() ? 'play' : 'keep') },
+      { label: '記録から再開', sub: saveInfo(), disabled: !hasSave(), action: () => (loadGame() ? 'play' : 'keep') },
       { label: 'はじめから', action: () => { newGame(); return 'play'; } },
       { label: 'タイトルへ', action: () => { G = null; return 'title'; } },
     ],
@@ -994,7 +1008,7 @@ function openTitle() {
     cancelable: false,
     items: [
       { label: 'はじめから', action: () => { newGame(); return 'play'; } },
-      { label: 'つづきから', sub: hasSave() ? '' : '記録なし', disabled: !hasSave(), action: () => (loadGame() ? 'play' : 'keep') },
+      { label: 'つづきから', sub: hasSave() ? saveInfo() : '記録なし', disabled: !hasSave(), action: () => (loadGame() ? 'play' : 'keep') },
       { label: '遊び方', action: () => { openHowTo(); } },
     ],
   }), 'title');
@@ -1019,15 +1033,38 @@ function openHowTo() {
   }), 'title');
 }
 
+let pauseTalk = '';
 function openPause() {
+  pauseTalk = '';
   openMenu(() => ({
     title: 'ポーズ',
-    text: `場所: ${area.def.name}\nプレイ時間: ${fmtTime(G.time)}`,
+    text: `場所: ${area.def.name}\nプレイ時間: ${fmtTime(G.time)}` + (pauseTalk ? `\n\n${pauseTalk}` : ''),
     items: [
       { label: 'ゲームにもどる', action: () => 'close' },
+      { label: 'ここで記録する', sub: hasSave() ? `上書き: ${saveInfo()}` : '', action: () => { openSaveConfirm(); } },
       { label: 'ステータス', action: () => { openStatus(); } },
       { label: '道具', action: () => { openItems(); } },
       { label: 'タイトルへ（記録していない進行は失われます）', action: () => { G = null; return 'title'; } },
+    ],
+  }), 'play');
+}
+
+function openSaveConfirm() {
+  openMenu(() => ({
+    title: '記録する',
+    text: hasSave() ? `今の記録（${saveInfo()}）を上書きしますか？` : '今の状態を記録しますか？',
+    back: () => openPause(),
+    items: [
+      {
+        label: 'はい', action: () => {
+          const ok = saveGame(true);
+          if (ok) { SFX.heal(); msg(`${area.def.name}で冒険を記録した。`, 'good'); } else SFX.bad();
+          openPause();
+          pauseTalk = ok ? '記録しました。' : '記録に失敗しました。（ブラウザの保存領域が使えません）';
+          renderMenu();
+        },
+      },
+      { label: 'いいえ', action: () => { openPause(); } },
     ],
   }), 'play');
 }
@@ -1234,7 +1271,7 @@ function openShop(c) {
           label: '泊まる（全回復＋記録）', sub: `${cost}G`,
           action: buy(cost, () => {
             p.hp = p.maxHp; p.mp = p.maxMp;
-            const ok = saveGame();
+            const ok = saveGame(false);
             SFX.heal();
             shopTalk = ok ? '「おはよう！ 旅の記録をつけておいたよ。」' : '「おはよう！（記録に失敗しました）」';
             msg('宿屋で休んだ。HPとMPが全回復した。', 'good');
