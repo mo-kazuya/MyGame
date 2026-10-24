@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2';
-const VERSION = '1.4'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '1.5'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -67,6 +67,7 @@ const SFX = {
   coin: () => { tone(880, 0.05); tone(1320, 0.1, 'square', 0.05, 0, 0.05); },
   item: () => { tone(660, 0.07); tone(990, 0.12, 'square', 0.05, 0, 0.07); },
   jump: () => tone(300, 0.1, 'square', 0.03, 250),
+  jump2: () => tone(500, 0.12, 'square', 0.03, 400),
   magic: () => tone(900, 0.15, 'sawtooth', 0.04, -600),
   fire: () => tone(180, 0.2, 'sawtooth', 0.05, -100),
   dig: () => { tone(90, 0.1, 'square', 0.07, -40); tone(70, 0.12, 'triangle', 0.06, -30, 0.08); },
@@ -102,7 +103,7 @@ let cam = { x: 0, y: 0 };
 function newPlayer() {
   return {
     x: 0, y: 0, w: 20, h: 28, vx: 0, vy: 0, dir: 1, aimX: 1, aimY: 0,
-    onGround: false, climb: false, drop: 0, atkCool: 0, inv: 0, anim: 0,
+    onGround: false, climb: false, drop: 0, atkCool: 0, inv: 0, anim: 0, airJumps: 1,
     level: 1, xp: 0, hp: 50, maxHp: 50, mp: 10, maxMp: 10,
     str: 5, def: 2, agi: 5, int: 5, karma: 0, gold: 600, food: 60,
     keys: 0, potions: 1, elixirs: 0, crowns: 0, lamp: false,
@@ -295,7 +296,7 @@ function updatePlayer() {
     if (dirIn && !keys.up && !keys.down) {
       p.climb = false;
     } else if (pressed.jump) {
-      p.climb = false; p.vy = -4;
+      p.climb = false; p.vy = -4; p.airJumps = 1;
     } else {
       p.x = Math.floor(cx / T) * T + T / 2 - p.w / 2;
       p.vx = p.vy = 0;
@@ -321,7 +322,14 @@ function updatePlayer() {
   // 歩き・ジャンプ
   p.vx = dirIn * 2.4;
   if (dirIn) { p.dir = dirIn; p.aimX = dirIn; p.aimY = 0; }
-  if (pressed.jump && p.onGround) { p.vy = -8; p.onGround = false; SFX.jump(); }
+  if (pressed.jump) {
+    if (p.onGround) {
+      p.vy = -8; p.onGround = false; p.airJumps = 1; SFX.jump();
+    } else if (p.airJumps > 0) { // 二段ジャンプ
+      p.airJumps--; p.vy = -7; SFX.jump2();
+      burst(p.x + p.w / 2, p.y + p.h, '#c0e0ff', 8);
+    }
+  }
   if (keys.down && !keys.dig && p.onGround && tileAtPx(cx, p.y + p.h + 2) === '-') p.drop = 10;
   p.vy = Math.min(p.vy + 0.45, 9);
 
@@ -332,7 +340,7 @@ function updatePlayer() {
   p.onGround = false;
   const hy = moveY(p, p.vy, p.drop <= 0);
   if (p.drop > 0) p.drop--;
-  if (hy) { if (p.vy > 0) p.onGround = true; p.vy = 0; }
+  if (hy) { if (p.vy > 0) { p.onGround = true; p.airJumps = 1; } p.vy = 0; }
   if (dirIn && p.onGround) p.anim++;
 
   if (pressed.magic) castMagic();
