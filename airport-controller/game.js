@@ -438,6 +438,7 @@
       if (rw) {
         p.path.push({ x: rw.thx, y: rw.thy, td: true });
         p.rw = rw;
+        smoothPath(p);
         drags.delete(id);
         sfx.lock();
         return;
@@ -446,6 +447,35 @@
   }
 
   function pointerUp(id) { drags.delete(id); }
+
+  // 滑走路までつながった線を、指のぶれを取ったなめらかな曲線に引き直す
+  // （飛行機の今の位置と滑走路の入口はそのまま。点の間隔も STEP にそろえ直す）
+  function smoothPath(p) {
+    const end = p.path[p.path.length - 1];
+    let pts = [{ x: p.x, y: p.y }, ...p.path.slice(0, -1).map(q => ({ x: q.x, y: q.y })), { x: end.x, y: end.y }];
+    if (pts.length < 4) return;
+    // 両端を止めたまま、となりの点との平均を何度も取る
+    for (let k = 0; k < 8; k++) {
+      pts = pts.map((q, i) => {
+        if (i === 0 || i === pts.length - 1) return q;
+        const a = pts[i - 1], b = pts[i + 1];
+        return { x: (a.x + q.x * 2 + b.x) / 4, y: (a.y + q.y * 2 + b.y) / 4 };
+      });
+    }
+    // 曲線に沿って STEP ごとに点を置き直す
+    const out = [];
+    let t = STEP;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const len = dist(a.x, a.y, b.x, b.y);
+      for (; t < len; t += STEP) out.push({ x: a.x + (b.x - a.x) * t / len, y: a.y + (b.y - a.y) * t / len });
+      t -= len;
+    }
+    const tail = out[out.length - 1];
+    if (tail && dist(tail.x, tail.y, end.x, end.y) < STEP / 2) out.pop();
+    out.push(end);
+    p.path = out;
+  }
 
   // 線の先が滑走路の入口に、正しい向きで届いたか
   function checkRunway(p, q) {
