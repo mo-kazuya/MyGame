@@ -21,6 +21,7 @@
   const ENTRY = 30;       // 滑走路の入口に線をつなげたとみなす距離
   const STEP = 7;         // 線の点の間隔
   const HUD_W = 134;      // 左上の「着陸 x / y」の表示の幅（画面の px。style.css の #buttons の位置と合わせる）
+  const TOP_BAR = 68;     // 画面の上の帯の高さ（画面の px）。表示とボタンはここに置き、飛行機はこの下だけを飛ぶ
 
   const TYPES = {
     jet:  { name: '旅客機',     speed: 46, r: 15, color: '#4fa8ff', runways: ['long'] },
@@ -127,13 +128,17 @@
     canvas.width = Math.round(cw * dpr);
     canvas.height = Math.round(ch * dpr);
     const oldW = W, oldH = H, wasPortrait = portrait;
-    portrait = ch > cw;
-    scale = Math.min(cw, ch) / BASE;
-    const long = Math.min(Math.max(cw, ch) / scale, MAX_LONG);
+    // 遊ぶ場所は、上の帯・ノッチ・ホームバーをよけた残り
+    const safe = safeInsets();
+    const ax = safe.left, ay = TOP_BAR + safe.top;
+    const aw = cw - safe.left - safe.right, ah = ch - ay - safe.bottom;
+    portrait = ah > aw;
+    scale = Math.min(aw, ah) / BASE;
+    const long = Math.min(Math.max(aw, ah) / scale, MAX_LONG);
     W = portrait ? BASE : long;
     H = portrait ? long : BASE;
-    offX = (cw - W * scale) / 2;
-    offY = (ch - H * scale) / 2;
+    offX = ax + (aw - W * scale) / 2;
+    offY = ay + (ah - H * scale) / 2;
     buildLayout();
     remap(wasPortrait !== portrait, oldW, oldH);
   }
@@ -218,7 +223,6 @@
       const edge = Math.floor(Math.random() * 4), t = rand(0.1, 0.9), m = 40;
       const x = edge === 0 ? t * W : edge === 1 ? W + m : edge === 2 ? t * W : -m;
       const y = edge === 0 ? -m : edge === 1 ? t * H : edge === 2 ? H + m : t * H;
-      if (underHud(clamp(x, 22, W - 22), clamp(y, 22, H - 22))) continue;
       if (planes.some(p => dist(p.x, p.y, x, y) < 170)) continue;
       if (incoming.some(s => dist(s.x, s.y, x, y) < 170)) continue;
       const tx = W * rand(0.3, 0.7), ty = H * rand(0.3, 0.7);
@@ -227,16 +231,6 @@
       return true;
     }
     return false;
-  }
-
-  // 左上の表示とボタンの下か（ここに出てくると見えないし、ボタンが指を取ってしまう）
-  function underHud(x, y) {
-    const b = buttonsBox.getBoundingClientRect();
-    const r = canvas.getBoundingClientRect();
-    const m = 40; // ワールドでの余白
-    const right = (b.right - r.left - offX) / scale + m;
-    const bottom = (Math.max(b.bottom, safeInsets().top + 64) - r.top - offY) / scale + m;
-    return x < right && y < bottom;
   }
 
   let nextId = 1;
@@ -695,6 +689,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#1d3a24';
     ctx.fillRect(0, 0, cw, ch);
+    // 上の帯との境目
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, offY - 2, cw, 2);
 
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
     ctx.save();
@@ -969,10 +966,13 @@
     if (safeCache === null) {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;' +
-        'padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left)';
+        'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
       document.body.appendChild(probe);
       const cs = getComputedStyle(probe);
-      safeCache = { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0, left: parseFloat(cs.paddingLeft) || 0 };
+      safeCache = {
+        top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0,
+        left: parseFloat(cs.paddingLeft) || 0, right: parseFloat(cs.paddingRight) || 0,
+      };
       probe.remove();
     }
     return safeCache;
