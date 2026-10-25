@@ -1,5 +1,5 @@
 'use strict';
-// エアポート・ライン：指やマウスで描いた線で飛行機を誘導し、滑走路に着陸させるラインドローゲーム。
+// エアポート管制官：指やマウスで描いた線で飛行機を誘導し、滑走路に着陸させるラインドローゲーム。
 // 速い旅客機は長い滑走路へ、遅いプロペラ機はどちらの滑走路にも降りられる。ぶつかったらゲームオーバー。
 // ステージ制：目標の機数を着陸させると次へ。旅客機だけで始まり、プロペラ機が混ざり、滑走路が減っていく。
 //
@@ -49,6 +49,7 @@
     return d;
   }
   function loadUnlocked() {
+    // 保存キーは旧名「エアポート・ライン」のまま（遊んだ進み具合を引き継ぐため）
     try { return clamp(+localStorage.getItem('airportline.stage') || 0, 0, STAGES.length - 1); } catch (e) { return 0; }
   }
   function loadSpeed() {
@@ -522,7 +523,7 @@
     const stageButtons = STAGES.map((_, i) =>
       `<button class="st${i === unlocked ? ' on' : ''}" data-stage="${i}"${i > unlocked ? ' disabled' : ''}>${i + 1}</button>`).join('');
     showOverlay(`
-      <h1>エアポート・ライン</h1>
+      <h1>エアポート管制官</h1>
       <p>飛行機を指（マウス）でなぞって線を引き、滑走路まで誘導しよう！</p>
       <ul class="rules">
         <li><span class="jet">■ 旅客機</span>（速い）→ <span class="jet">青い長い滑走路</span>だけ</li>

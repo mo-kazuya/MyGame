@@ -9,16 +9,16 @@
 | フォルダ | ゲーム | ジャンル |
 | --- | --- | --- |
 | [`xanadu/`](xanadu/) | [地底の竜 -XANADU-like-](xanadu/README.md) | アクションRPG（ザナドゥ風） |
-| [`linedraw/`](linedraw/) | [エアポート・ライン](linedraw/README.md) | ライン描画パズル |
+| [`airport-controller/`](airport-controller/) | [エアポート管制官](airport-controller/README.md) | 管制官ゲーム（ライン描画） |
 
 ## 構成
 
 ```
-index.html    トップページ（ゲーム一覧。games.js からカードを作る）
-portal.css    トップページの見た目
-games.js      トップページに並べるゲームの一覧
-xanadu/       地底の竜 -XANADU-like-
-linedraw/     エアポート・ライン
+index.html           トップページ（ゲーム一覧。games.js からカードを作る）
+portal.css           トップページの見た目
+games.js             トップページに並べるゲームの一覧
+xanadu/              地底の竜 -XANADU-like-
+airport-controller/  エアポート管制官
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。
