@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07070c">
+<title>地底の竜</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1.9">
+</head>
+<body>
+<div id="wrap">
+  <div id="play">
+    <div id="tl" class="tpad">
+      <div id="dpad">
+        <span data-dir="up">▲</span><span data-dir="left">◀</span><span data-dir="right">▶</span><span data-dir="down">▼</span>
+      </div>
+    </div>
+    <div id="stage">
+      <canvas id="screen" width="640" height="416"></canvas>
+      <div id="menu" class="hidden"></div>
+    </div>
+    <div id="tr" class="tpad">
+      <div class="trow small">
+        <button class="tbtn s" data-key="potion">薬</button>
+        <button class="tbtn s" data-key="elixir">水</button>
+        <button class="tbtn s" data-key="items">道具</button>
+        <button class="tbtn s" data-key="status">状態</button>
+        <button class="tbtn s" data-key="cancel">≡</button>
+      </div>
+      <div class="trow big">
+        <div class="tcol">
+          <button class="tbtn m" data-key="spell">切替</button>
+          <button class="tbtn m" data-key="dig">掘る</button>
+        </div>
+        <button class="tbtn l x" data-key="magic">魔法<small>X</small></button>
+        <button class="tbtn l z" data-key="jump">跳ぶ<small>Z</small></button>
+      </div>
+    </div>
+  </div>
+  <div id="hud"></div>
+  <div id="log"></div>
+  <div id="help">
+    ← → 移動 ／ ↑ ↓ はしご・扉に入る ／ Z・Space ジャンプ（空中でもう一度押すと二段ジャンプ／部屋では階段を出る） ／ X 魔法 ／ Q 魔法切替 ／ D つるはし（↓＋D で足元）<br>
+    A 薬 ／ S 魔法の水 ／ V 道具 ／ C ステータス ／ Esc ポーズ（どこでも記録できる） ／ 敵には<b>体当たり</b>で攻撃！ <b>背後から</b>なら大ダメージ！<br>
+    メニューは ↑↓ で選択、Z・Enter で決定、X・Esc で戻る ／ <a href="../index.html">← ゲーム一覧へ</a>
+  </div>
+  <div id="thelp">
+    十字キーで移動（▲で扉・はしご）、敵には体当たり！背後からなら大ダメージ！ 跳ぶ＝ジャンプ（空中でもう一度で二段ジャンプ）・決定・部屋から出る、魔法＝戻る。▼＋掘るで足元を掘る。≡ でポーズ・どこでも記録。メニューは項目をタップしても選べます。 <a href="../index.html">← ゲーム一覧へ</a>
+  </div>
+</div>
+<script src="js/sprites.js?v=1.9"></script>
+<script src="js/data.js?v=1.9"></script>
+<script src="js/maps.js?v=1.9"></script>
+<script src="js/game.js?v=1.9"></script>
+<script src="js/touch.js?v=1.9"></script>
+</body>
+</html>

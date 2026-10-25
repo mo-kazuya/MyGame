@@ -37,6 +37,7 @@ body {
 #log .bad { color: #ff7a7a; }
 #log .info { color: #ffd84a; }
 #help { margin-top: 6px; font-size: 13px; color: #9a9ab0; line-height: 1.6; }
+#help a, #thelp a { color: #9ac4ff; }
 
 #menu {
   position: absolute; inset: 0;

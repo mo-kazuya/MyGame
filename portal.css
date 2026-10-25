@@ -1,0 +1,40 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #07070c;
+  color: #e8e8f0;
+  font-family: 'DotGothic16', 'MS Gothic', monospace;
+  padding: 0 16px env(safe-area-inset-bottom);
+}
+header, main, footer { max-width: 960px; margin: 0 auto; }
+header { padding: 28px 0 8px; text-align: center; }
+header h1 { margin: 0; font-size: 34px; font-weight: normal; color: #ffd84a; letter-spacing: 0.1em; text-shadow: 3px 3px 0 #6a2a2a; }
+header p { margin: 10px 0 0; color: #a8a8c0; font-size: 15px; line-height: 1.6; }
+
+main {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; padding: 20px 0;
+}
+.card {
+  flex: 1 1 280px; max-width: 360px;
+  display: flex; flex-direction: column;
+  background: #0c0c40; border: 3px double #e8e8f0; box-shadow: 0 0 0 3px #000;
+  color: inherit; text-decoration: none;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.card:hover, .card:focus-visible { transform: translateY(-3px); border-color: #ffd84a; outline: none; }
+.thumb { aspect-ratio: 640 / 416; background: #000; border-bottom: 2px solid #3a3a55; display: flex; align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; display: block; }
+.thumb span { color: #ffd84a; font-size: 20px; padding: 12px; text-align: center; }
+.body { padding: 12px 14px 14px; display: flex; flex-direction: column; flex: 1; }
+.body h2 { margin: 0; font-size: 20px; font-weight: normal; color: #ffd84a; }
+.genre { margin: 4px 0 0; font-size: 13px; color: #a8c8ff; }
+.genre span { color: #8a8ab0; }
+.desc { margin: 8px 0; font-size: 14px; line-height: 1.6; flex: 1; }
+.tags { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.tags span { font-size: 12px; padding: 1px 8px; border: 1px solid #5a5a8a; border-radius: 10px; color: #c8c8e0; }
+.play { align-self: flex-start; padding: 6px 16px; background: #6a2a2a; border: 2px solid #b05050; font-size: 15px; }
+.card:hover .play { background: #8a3a3a; }
+
+noscript a { color: #9ac4ff; }
+footer { padding: 12px 0 28px; text-align: center; font-size: 13px; }
+footer a { color: #9ac4ff; }
