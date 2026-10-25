@@ -534,7 +534,7 @@
       <button id="go">${unlocked > 0 ? `つづきから（ステージ ${unlocked + 1}）` : 'はじめる'}</button>
       <div class="stages">ステージを選ぶ<div>${stageButtons}</div></div>
       ${speedRow()}
-      <p><a href="../index.html">← 地底の竜 -XANADU-like- へ</a></p>`);
+      <p><a href="../index.html">← ゲーム一覧へ</a></p>`);
     bindButtons({ go: () => showStageIntro(unlocked) });
     overlay.querySelectorAll('[data-stage]').forEach(b => {
       b.addEventListener('click', () => { unlockAudio(); showStageIntro(+b.dataset.stage); });

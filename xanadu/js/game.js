@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2';
-const VERSION = '1.7'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '1.8'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -1132,6 +1132,7 @@ function openTitle() {
       { label: 'はじめから', action: () => { newGame(); return 'play'; } },
       { label: 'つづきから', sub: hasSave() ? saveInfo() : '記録なし', disabled: !hasSave(), action: () => (loadGame() ? 'play' : 'keep') },
       { label: '遊び方', action: () => { openHowTo(); } },
+      { label: 'ゲーム一覧へ', action: () => { location.href = '../index.html'; return 'keep'; } },
     ],
   }), 'title');
 }
