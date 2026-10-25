@@ -1,6 +1,7 @@
 'use strict';
 // エアポート・ライン：指やマウスで描いた線で飛行機を誘導し、滑走路に着陸させるラインドローゲーム。
 // 速い旅客機は長い滑走路へ、遅いプロペラ機はどちらの滑走路にも降りられる。ぶつかったらゲームオーバー。
+// ステージ制：目標の機数を着陸させると次へ。旅客機だけで始まり、プロペラ機が混ざり、滑走路が減っていく。
 //
 // 座標は「ワールド座標」で扱う。画面の短い辺がいつも BASE になるように拡大縮小し、
 // 長い辺は画面の縦横比に合わせて伸ばす（縦持ちのスマホでは滑走路の配置も縦向きにする）。
@@ -31,7 +32,8 @@
   let runways = [], decor = [];
   let planes = [], incoming = [], particles = [], texts = [];
   let state = 'title'; // title / play / pause / crash / over
-  let landed = 0, best = loadBest(), elapsed = 0, spawnTimer = 0, crashT = 0, beepT = 0, clock = 0;
+  let landed = 0, elapsed = 0, spawnTimer = 0, crashT = 0, clearT = 0, beepT = 0, clock = 0;
+  let stageNo = 0, unlocked = 0; // stageNo は STAGES の添字。unlocked は遊べる最後のステージの添字
   let toast = null;
   let gameSpeed = loadSpeed();
   const drags = new Map(); // 指（touch の identifier、マウスは 'mouse'）→ 線を描いている飛行機
@@ -46,8 +48,8 @@
     while (d < -Math.PI) d += Math.PI * 2;
     return d;
   }
-  function loadBest() {
-    try { return +localStorage.getItem('airportline.best') || 0; } catch (e) { return 0; }
+  function loadUnlocked() {
+    try { return clamp(+localStorage.getItem('airportline.stage') || 0, 0, STAGES.length - 1); } catch (e) { return 0; }
   }
   function loadSpeed() {
     try {
@@ -55,8 +57,8 @@
       return SPEEDS.includes(v) ? v : 1;
     } catch (e) { return 1; }
   }
-  function saveBest() {
-    try { localStorage.setItem('airportline.best', String(best)); } catch (e) { /* 保存できなくても遊べる */ }
+  function saveUnlocked() {
+    try { localStorage.setItem('airportline.stage', String(unlocked)); } catch (e) { /* 保存できなくても遊べる */ }
   }
 
   // ---------- 音（WebAudio で簡単な効果音） ----------
@@ -86,15 +88,34 @@
     land: () => { tone(523, 0.1, 'triangle', 0.12); tone(659, 0.1, 'triangle', 0.12, null, 0.09); tone(784, 0.2, 'triangle', 0.12, null, 0.18); },
     warn: () => tone(990, 0.09, 'square', 0.06),
     spawn: () => tone(440, 0.15, 'sine', 0.06, 520),
+    clear: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i === 3 ? 0.5 : 0.14, 'triangle', 0.13, null, i * 0.13)),
     crash: () => { tone(200, 0.8, 'sawtooth', 0.2, 40); tone(90, 1.0, 'square', 0.15, 30, 0.05); },
   };
 
   // ---------- 画面サイズと滑走路の配置 ----------
   // 配置は横長の画面を基準に書き、縦長では x と y を入れ替える（対角線で折り返す）。
-  const RUNWAY_DEFS = [
-    { kind: 'long',  fx: 0.42, fy: 0.62, deg: -12, len: 290, wid: 30 },
-    { kind: 'short', fx: 0.74, fy: 0.30, deg: 200, len: 160, wid: 24 },
+  const RUNWAY_DEFS = {
+    L1: { kind: 'long',  fx: 0.40, fy: 0.64, deg: -12, len: 290, wid: 30 },
+    L2: { kind: 'long',  fx: 0.62, fy: 0.24, deg: 190, len: 260, wid: 30 },
+    S1: { kind: 'short', fx: 0.80, fy: 0.60, deg: 250, len: 160, wid: 24 },
+  };
+
+  // ---------- ステージ ----------
+  // goal: 着陸させる機数　prop: プロペラ機の割合　runways: 使う滑走路
+  // max: 同時に飛ぶ最大の機数　interval: 出てくる間隔（秒。着陸させるたびに少し短くなる）
+  const STAGES = [
+    { goal: 5,  prop: 0,    runways: ['L1', 'L2'],       max: 3, interval: 6.5, note: 'まずは旅客機だけ。長い滑走路へ誘導しよう' },
+    { goal: 8,  prop: 0,    runways: ['L1', 'L2'],       max: 4, interval: 5.2, note: '旅客機が増えてきた。2本の滑走路を使い分けよう' },
+    { goal: 10, prop: 0.35, runways: ['L1', 'L2', 'S1'], max: 4, interval: 5.0, note: 'プロペラ機が登場！ 遅いけれど、短い滑走路にも長い滑走路にも降りられる' },
+    { goal: 12, prop: 0.5,  runways: ['L1', 'L2', 'S1'], max: 5, interval: 4.4, note: '速い旅客機と遅いプロペラ機。追突に気をつけて' },
+    { goal: 12, prop: 0.5,  runways: ['L1', 'S1'],       max: 5, interval: 4.4, note: '滑走路が減った！ 旅客機が降りられる長い滑走路は1本だけ' },
+    { goal: 15, prop: 0.55, runways: ['L1', 'S1'],       max: 6, interval: 3.8, note: 'さらに混雑。プロペラ機は短い滑走路へ逃がそう' },
+    { goal: 15, prop: 0.5,  runways: ['L1'],             max: 5, interval: 4.2, note: '滑走路はついに1本！ 全部の飛行機が同じ滑走路へ' },
+    { goal: 20, prop: 0.5,  runways: ['L1'],             max: 6, interval: 3.6, note: '最終ステージ。順番をよく考えて着陸させよう' },
   ];
+  unlocked = loadUnlocked();
+  const stage = () => STAGES[stageNo];
+  const hasProps = () => stage().prop > 0;
 
   function resize() {
     const cw = canvas.clientWidth, ch = canvas.clientHeight;
@@ -116,12 +137,13 @@
 
   function buildLayout() {
     const LW = Math.max(W, H), LH = Math.min(W, H);
-    runways = RUNWAY_DEFS.map(d => {
+    runways = stage().runways.map(id => {
+      const d = RUNWAY_DEFS[id];
       let x = d.fx * LW, y = d.fy * LH, a = d.deg * Math.PI / 180;
       if (portrait) { [x, y] = [y, x]; a = Math.PI / 2 - a; }
       const dx = Math.cos(a), dy = Math.sin(a);
       return {
-        kind: d.kind, x, y, a, dx, dy, len: d.len, wid: d.wid, color: RUNWAY_COLOR[d.kind],
+        id, kind: d.kind, x, y, a, dx, dy, len: d.len, wid: d.wid, color: RUNWAY_COLOR[d.kind],
         thx: x - dx * d.len / 2, thy: y - dy * d.len / 2, // 入口（ここから進入する）
       };
     });
@@ -160,7 +182,7 @@
       move(p);
       p.dir = turn(p.dir); p.heading = turn(p.heading);
       p.path.forEach(move);
-      if (p.rw) p.rw = runways.find(r => r.kind === p.rw.kind);
+      if (p.rw) p.rw = runways.find(r => r.id === p.rw.id);
       const last = p.path[p.path.length - 1];
       if (last && last.td) { last.x = p.rw.thx; last.y = p.rw.thy; }
     }
@@ -170,20 +192,25 @@
   }
 
   // ---------- ゲームの進行 ----------
-  function startGame() {
+  // ステージの準備（滑走路を並べ直して空を空にする）。始めるのは startStage
+  function setStage(n) {
+    stageNo = n;
     planes = []; incoming = []; particles = []; texts = [];
     drags.clear();
-    landed = 0; elapsed = 0; spawnTimer = 1; crashT = 0; toast = null;
+    landed = 0; elapsed = 0; spawnTimer = 1; crashT = 0; clearT = 0; toast = null;
+    buildLayout();
+  }
+  function startStage() {
     state = 'play';
     hideOverlay();
   }
 
-  const spawnInterval = () => Math.max(2.3, 7 - landed * 0.17 - elapsed * 0.008);
-  const maxPlanes = () => Math.min(11, 3 + Math.floor(landed / 3));
+  const spawnInterval = () => Math.max(stage().interval * 0.65, stage().interval - landed * 0.1);
+  const maxPlanes = () => stage().max;
 
   // 画面の端に「もうすぐ来る」印を出し、少しあとで飛行機が入ってくる
   function trySpawn() {
-    const type = Math.random() < 0.5 ? 'jet' : 'prop';
+    const type = Math.random() < stage().prop ? 'prop' : 'jet';
     for (let tries = 0; tries < 12; tries++) {
       const edge = Math.floor(Math.random() * 4), t = rand(0.1, 0.9), m = 40;
       const x = edge === 0 ? t * W : edge === 1 ? W + m : edge === 2 ? t * W : -m;
@@ -216,6 +243,11 @@
       if (crashT > 1.8) { state = 'over'; showOver(); }
       return;
     }
+    if (state === 'clear') {
+      clearT += dt;
+      if (clearT > 1.6) { state = 'cleared'; showClear(); }
+      return;
+    }
     if (state !== 'play') return;
     dt *= gameSpeed; // ここから先（飛行・出現・着陸）はスピード設定の倍率で進む
     elapsed += dt;
@@ -238,6 +270,7 @@
       p.heading += angleDiff(p.dir, p.heading) * Math.min(1, dt * 9);
     }
     planes = planes.filter(p => !(p.state === 'landing' && p.lt > 2.6));
+    if (state !== 'play') return; // この移動でステージクリアになった
 
     // 接近と衝突
     const air = planes.filter(p => p.state === 'fly');
@@ -287,9 +320,19 @@
     p.path = [];
     for (const [id, q] of drags) if (q === p) drags.delete(id);
     landed++;
-    if (landed > best) { best = landed; saveBest(); }
     texts.push({ x: p.x, y: p.y - 20, text: '+1', color: p.T.color, t: 1.2 });
-    sfx.land();
+    if (landed >= stage().goal) stageClear();
+    else sfx.land();
+  }
+
+  // 目標の機数に届いたら、その場で空を止めてクリアの演出へ
+  function stageClear() {
+    state = 'clear';
+    clearT = 0;
+    drags.clear();
+    incoming = [];
+    if (stageNo + 1 > unlocked && stageNo + 1 < STAGES.length) { unlocked = stageNo + 1; saveUnlocked(); }
+    sfx.clear();
   }
 
   function updateLanding(p, dt) {
@@ -475,6 +518,9 @@
 
   function showTitle() {
     state = 'title';
+    setStage(unlocked);
+    const stageButtons = STAGES.map((_, i) =>
+      `<button class="st${i === unlocked ? ' on' : ''}" data-stage="${i}"${i > unlocked ? ' disabled' : ''}>${i + 1}</button>`).join('');
     showOverlay(`
       <h1>エアポート・ライン</h1>
       <p>飛行機を指（マウス）でなぞって線を引き、滑走路まで誘導しよう！</p>
@@ -483,13 +529,62 @@
         <li><span class="prop">■ プロペラ機</span>（遅い）→ <span class="prop">オレンジの短い滑走路</span>でも<span class="jet">長い滑走路</span>でもOK</li>
         <li>滑走路には <b>▶ の矢印の向き</b>からしか降りられません</li>
         <li>線が入口につながると色が変わり、着陸が決まります</li>
-        <li>飛行機どうしがぶつかったらゲームオーバー</li>
+        <li>目標の機数を着陸させるとステージクリア。ぶつかったらゲームオーバー</li>
       </ul>
-      <p>ベスト：<span class="score">${best}</span> 機</p>
-      <button id="go">はじめる</button>
+      <button id="go">${unlocked > 0 ? `つづきから（ステージ ${unlocked + 1}）` : 'はじめる'}</button>
+      <div class="stages">ステージを選ぶ<div>${stageButtons}</div></div>
       ${speedRow()}
       <p><a href="../index.html">← 地底の竜 -XANADU-like- へ</a></p>`);
-    bindButtons({ go: startGame });
+    bindButtons({ go: () => showStageIntro(unlocked) });
+    overlay.querySelectorAll('[data-stage]').forEach(b => {
+      b.addEventListener('click', () => { unlockAudio(); showStageIntro(+b.dataset.stage); });
+    });
+  }
+
+  function stageInfo(n) {
+    const st = STAGES[n];
+    const kinds = st.prop > 0
+      ? `<span class="jet">旅客機</span>・<span class="prop">プロペラ機</span>`
+      : `<span class="jet">旅客機</span>のみ`;
+    const longs = st.runways.filter(id => RUNWAY_DEFS[id].kind === 'long').length;
+    const shorts = st.runways.length - longs;
+    return `
+      <p class="goal">目標：<span class="score">${st.goal}</span> 機 着陸</p>
+      <p>飛行機：${kinds}<br>滑走路：<span class="jet">長い ${longs} 本</span>${shorts ? `・<span class="prop">短い ${shorts} 本</span>` : ''}</p>
+      <p class="note">${st.note}</p>`;
+  }
+
+  function showStageIntro(n) {
+    setStage(n);
+    state = 'intro';
+    showOverlay(`
+      <h1>ステージ ${n + 1}</h1>
+      ${stageInfo(n)}
+      <button id="start">スタート</button><br>
+      <button id="title" class="sub">タイトルへ</button>
+      ${speedRow()}`);
+    bindButtons({ start: startStage, title: showTitle });
+  }
+
+  function showClear() {
+    const last = stageNo === STAGES.length - 1;
+    if (last) {
+      showOverlay(`
+        <h1>全ステージクリア！</h1>
+        <p>すべての飛行機を無事に着陸させました。<br>おつかれさまでした、管制官！</p>
+        <button id="again">ステージ ${stageNo + 1} をもう一度</button><br>
+        <button id="title" class="sub">タイトルへ</button>`);
+      bindButtons({ again: () => showStageIntro(stageNo), title: showTitle });
+      return;
+    }
+    showOverlay(`
+      <h1>ステージ ${stageNo + 1} クリア！</h1>
+      <p>次は <b>ステージ ${stageNo + 2}</b></p>
+      ${stageInfo(stageNo + 1)}
+      <button id="next">ステージ ${stageNo + 2} へ</button><br>
+      <button id="title" class="sub">タイトルへ</button>
+      ${speedRow()}`);
+    bindButtons({ next: () => { setStage(stageNo + 1); startStage(); }, title: showTitle });
   }
 
   function showPause() {
@@ -498,12 +593,12 @@
     drags.clear();
     showOverlay(`
       <h1>ポーズ</h1>
-      <p>着陸：<span class="score">${landed}</span> 機</p>
+      <p>ステージ ${stageNo + 1}　着陸：<span class="score">${landed}</span> / ${stage().goal} 機</p>
       <button id="resume">つづける</button><br>
-      <button id="restart" class="sub">はじめから</button>
+      <button id="restart" class="sub">やり直す</button>
       <button id="title" class="sub">タイトルへ</button>
       ${speedRow()}`);
-    bindButtons({ resume: resume, restart: startGame, title: showTitle });
+    bindButtons({ resume: resume, restart: () => showStageIntro(stageNo), title: showTitle });
   }
   function resume() {
     if (state !== 'pause') return;
@@ -514,13 +609,12 @@
   function showOver() {
     showOverlay(`
       <h2>衝突！</h2>
-      <p>着陸させた飛行機</p>
-      <p class="score">${landed} 機</p>
-      <p>${landed >= best && landed > 0 ? 'ベスト更新！' : `ベスト：${best} 機`}</p>
+      <p>ステージ ${stageNo + 1}　着陸させた飛行機</p>
+      <p class="score">${landed} / ${stage().goal} 機</p>
       <button id="again">もう一度</button><br>
       <button id="title" class="sub">タイトルへ</button>
       ${speedRow()}`);
-    bindButtons({ again: startGame, title: showTitle });
+    bindButtons({ again: () => { setStage(stageNo); startStage(); }, title: showTitle });
   }
 
   pauseBtn.addEventListener('click', () => { unlockAudio(); showPause(); });
@@ -543,7 +637,7 @@
     } else if (e.key === '-') {
       stepSpeed(-1);
     } else if (e.key === 'Enter' || e.key === ' ') {
-      const btn = overlay.querySelector('button:not(.sp)');
+      const btn = overlay.querySelector('button:not(.sp):not(.st)');
       if (btn && !overlay.classList.contains('hidden')) { e.preventDefault(); btn.click(); }
     }
   });
@@ -653,7 +747,7 @@
     const lx = rw.x - rw.dy * (hw + 22), ly = rw.y + rw.dx * (hw + 22);
     ctx.font = '15px DotGothic16, monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const label = rw.kind === 'long' ? '旅客機・プロペラ機' : 'プロペラ機';
+    const label = rw.kind === 'short' ? 'プロペラ機' : hasProps() ? '旅客機・プロペラ機' : '旅客機';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(label, lx, ly);
     ctx.fillStyle = rw.color; ctx.fillText(label, lx, ly);
     ctx.textBaseline = 'alphabetic';
@@ -790,9 +884,22 @@
       ctx.fillStyle = color; ctx.fillText(text, x, y);
     };
     if (state !== 'title') {
-      line(`着陸 ${landed}`, 14, top, '#ffffff');
+      line(`着陸 ${landed} / ${stage().goal}`, 14, top, '#ffffff');
       ctx.font = '14px DotGothic16, monospace';
-      line(`ベスト ${best}`, 14, top + 26, '#ffd84a');
+      line(`ステージ ${stageNo + 1}`, 14, top + 26, '#ffd84a');
+      // 目標までの進み具合
+      const bw = 120, bx = 14, by = top + 46;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by, bw, 6);
+      ctx.fillStyle = '#ffd84a'; ctx.fillRect(bx, by, bw * Math.min(1, landed / stage().goal), 6);
+    }
+    if (state === 'clear') {
+      ctx.font = '40px DotGothic16, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const k = Math.min(1, clearT * 3);
+      ctx.globalAlpha = k;
+      line('STAGE CLEAR!', cw / 2, ch / 2 - 20 * (1 - k), '#ffd84a');
+      ctx.globalAlpha = 1;
+      ctx.textBaseline = 'top';
     }
     if (toast) {
       ctx.font = '17px DotGothic16, monospace';
@@ -838,6 +945,6 @@
   // 動作確認用（ブラウザのコンソールから状態を見られるように）
   window.airportLine = {
     get state() { return state; }, get planes() { return planes; }, get runways() { return runways; },
-    get landed() { return landed; }, get speed() { return gameSpeed; }, get world() { return { W, H, scale, offX, offY }; },
+    get landed() { return landed; }, get stage() { return stageNo; }, get speed() { return gameSpeed; }, get world() { return { W, H, scale, offX, offY }; },
   };
 })();

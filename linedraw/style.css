@@ -50,6 +50,16 @@ html, body {
 }
 .panel button.sub { background: #34405a; border-color: #8090b0; font-size: 15px; }
 .panel a { color: #9ac4ff; font-size: 13px; }
+.panel .goal { font-size: 18px; }
+.panel .note { color: #ffe9a0; }
+.panel .stages { margin-top: 10px; font-size: 14px; color: #c8d4e8; }
+.panel .stages div { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
+.panel button.st {
+  margin: 0; min-width: 40px; padding: 6px 0; font-size: 16px;
+  background: #22304a; border-color: #607090;
+}
+.panel button.st.on { background: #2a6ad0; border-color: #cfe0ff; }
+.panel button.st:disabled { opacity: 0.35; cursor: default; }
 .panel .speeds { margin-top: 12px; font-size: 14px; color: #c8d4e8; }
 .panel .speeds div { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
 .panel button.sp {
