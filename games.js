@@ -12,8 +12,8 @@
 
 const GAMES = [
   {
-    dir: 'xanadu',
-    title: '地底の竜 -XANADU-like-',
+    dir: 'underground-dragon',
+    title: '地底の竜',
     genre: 'アクションRPG',
     inspired: 'ザナドゥ（1985）',
     desc: '有限の魔物と資源、熟練度、カルマ、つるはしで掘る隠し部屋。3体の守護者から王冠を奪い、地底の竜を討て。',

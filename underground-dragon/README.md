@@ -1,17 +1,17 @@
-# 地底の竜 -XANADU-like-
+# 地底の竜
 
 『ザナドゥ』風の横スクロール・アクションRPGです。HTML5 Canvas と素の JavaScript だけで動きます（ビルド不要）。
 
 ## 遊び方
 
-- 公開版：https://mo-kazuya.github.io/MyGame/xanadu/
+- 公開版：https://mo-kazuya.github.io/MyGame/underground-dragon/
 - 手元では、このフォルダの `index.html` をブラウザで開くだけで遊べます。
 
 ローカルサーバーで動かす場合（リポジトリのルートで）:
 
 ```sh
 python3 -m http.server 8000
-# → http://localhost:8000/xanadu/ を開く
+# → http://localhost:8000/underground-dragon/ を開く
 ```
 
 リポジトリ全体のことや、他のゲームは [ルートの README](../README.md) を見てください。
@@ -80,7 +80,7 @@ js/touch.js     スマホ用のタッチ操作
 thumb.png       トップページ用のサムネイル
 ```
 
-スマホのキャッシュ対策として、`index.html` で読み込むファイルに `?v=1.8` のような版番号を付けています。
+スマホのキャッシュ対策として、`index.html` で読み込むファイルに `?v=1.9` のような版番号を付けています。
 ファイルを変えたら、`index.html` の `?v=` と `js/game.js` の `VERSION` を一緒に上げてください（タイトル画面に表示されます）。
 
 ### マップの作り方

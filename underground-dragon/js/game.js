@@ -1,8 +1,8 @@
 'use strict';
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
-const SAVE_KEY = 'xanaduLike.save.v2';
-const VERSION = '1.8'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const SAVE_KEY = 'xanaduLike.save.v2'; // 旧名のまま（これまでのセーブを引き継ぐため）
+const VERSION = '1.9'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -1125,7 +1125,7 @@ function menuInput() {
 function openTitle() {
   mode = 'title';
   openMenu(() => ({
-    title: '地底の竜 -XANADU-like-',
+    title: '地底の竜',
     text: `町の東にある地下迷宮の奥深く、\n伝説の竜が棲むという。\n3体の守護者から王冠を奪い、竜を討て！\n\nver ${VERSION}`,
     cancelable: false,
     items: [
