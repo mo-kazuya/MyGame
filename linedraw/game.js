@@ -1,6 +1,6 @@
 'use strict';
 // エアポート・ライン：指やマウスで描いた線で飛行機を誘導し、滑走路に着陸させるラインドローゲーム。
-// 速い旅客機は長い滑走路へ、遅いプロペラ機は短い滑走路へ。ぶつかったらゲームオーバー。
+// 速い旅客機は長い滑走路へ、遅いプロペラ機はどちらの滑走路にも降りられる。ぶつかったらゲームオーバー。
 //
 // 座標は「ワールド座標」で扱う。画面の短い辺がいつも BASE になるように拡大縮小し、
 // 長い辺は画面の縦横比に合わせて伸ばす（縦持ちのスマホでは滑走路の配置も縦向きにする）。
@@ -11,6 +11,7 @@
   const overlay = document.getElementById('overlay');
   const pauseBtn = document.getElementById('pause');
   const soundBtn = document.getElementById('sound');
+  const speedBtn = document.getElementById('speed');
 
   const BASE = 600;       // 画面の短い辺のワールドでの長さ
   const MAX_LONG = 1400;  // 長い辺の上限（これより横長の画面では左右に余白を作る）
@@ -19,9 +20,11 @@
   const STEP = 7;         // 線の点の間隔
 
   const TYPES = {
-    jet:  { name: '旅客機',     speed: 46, r: 15, color: '#4fa8ff', runway: 'long' },
-    prop: { name: 'プロペラ機', speed: 24, r: 11, color: '#ffb43c', runway: 'short' },
+    jet:  { name: '旅客機',     speed: 46, r: 15, color: '#4fa8ff', runways: ['long'] },
+    prop: { name: 'プロペラ機', speed: 24, r: 11, color: '#ffb43c', runways: ['long', 'short'] },
   };
+  const canLand = (p, rw) => p.T.runways.includes(rw.kind);
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]; // 全体のスピード（ゲームの時間の進み方）
   const RUNWAY_COLOR = { long: TYPES.jet.color, short: TYPES.prop.color };
 
   let W = 900, H = 600, scale = 1, offX = 0, offY = 0, dpr = 1, portrait = false;
@@ -30,6 +33,7 @@
   let state = 'title'; // title / play / pause / crash / over
   let landed = 0, best = loadBest(), elapsed = 0, spawnTimer = 0, crashT = 0, beepT = 0, clock = 0;
   let toast = null;
+  let gameSpeed = loadSpeed();
   const drags = new Map(); // 指（touch の identifier、マウスは 'mouse'）→ 線を描いている飛行機
 
   // ---------- 小さな道具 ----------
@@ -44,6 +48,12 @@
   }
   function loadBest() {
     try { return +localStorage.getItem('airportline.best') || 0; } catch (e) { return 0; }
+  }
+  function loadSpeed() {
+    try {
+      const v = +localStorage.getItem('airportline.speed');
+      return SPEEDS.includes(v) ? v : 1;
+    } catch (e) { return 1; }
   }
   function saveBest() {
     try { localStorage.setItem('airportline.best', String(best)); } catch (e) { /* 保存できなくても遊べる */ }
@@ -207,6 +217,7 @@
       return;
     }
     if (state !== 'play') return;
+    dt *= gameSpeed; // ここから先（飛行・出現・着陸）はスピード設定の倍率で進む
     elapsed += dt;
 
     // 出現
@@ -390,11 +401,8 @@
       }
       const dx = q.x - ref.x, dy = q.y - ref.y, len = Math.hypot(dx, dy) || 1;
       const dot = (dx * rw.dx + dy * rw.dy) / len;
-      if (rw.kind !== p.T.runway) {
-        if (!p.hinted) {
-          showToast(p.type === 'jet' ? '旅客機は「長い」滑走路へ！' : 'プロペラ機は「短い」滑走路へ！');
-          p.hinted = true;
-        }
+      if (!canLand(p, rw)) {
+        if (!p.hinted) { showToast('旅客機は「長い」滑走路へ！'); p.hinted = true; }
         continue;
       }
       if (dot < 0.4) {
@@ -441,7 +449,29 @@
     for (const [id, fn] of Object.entries(map)) {
       overlay.querySelector('#' + id).addEventListener('click', () => { unlockAudio(); fn(); });
     }
+    overlay.querySelectorAll('[data-speed]').forEach(b => {
+      b.addEventListener('click', () => setSpeed(+b.dataset.speed));
+    });
   }
+
+  // ---------- スピード設定 ----------
+  const speedLabel = v => '×' + v;
+  function speedRow() {
+    return `<div class="speeds">スピード<div>${SPEEDS.map(v =>
+      `<button class="sp${v === gameSpeed ? ' on' : ''}" data-speed="${v}">${speedLabel(v)}</button>`).join('')}</div></div>`;
+  }
+  function setSpeed(v) {
+    gameSpeed = v;
+    speedBtn.textContent = speedLabel(v);
+    overlay.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('on', +b.dataset.speed === v));
+    try { localStorage.setItem('airportline.speed', String(v)); } catch (e) { /* 無視 */ }
+    if (state === 'play') showToast(`スピード ${speedLabel(v)}`);
+  }
+  function stepSpeed(d) {
+    const i = SPEEDS.indexOf(gameSpeed);
+    setSpeed(SPEEDS[clamp(i + d, 0, SPEEDS.length - 1)]);
+  }
+  setSpeed(gameSpeed);
 
   function showTitle() {
     state = 'title';
@@ -449,14 +479,15 @@
       <h1>エアポート・ライン</h1>
       <p>飛行機を指（マウス）でなぞって線を引き、滑走路まで誘導しよう！</p>
       <ul class="rules">
-        <li><span class="jet">■ 旅客機</span>（速い）→ <span class="jet">青い長い滑走路</span></li>
-        <li><span class="prop">■ プロペラ機</span>（遅い）→ <span class="prop">オレンジの短い滑走路</span></li>
+        <li><span class="jet">■ 旅客機</span>（速い）→ <span class="jet">青い長い滑走路</span>だけ</li>
+        <li><span class="prop">■ プロペラ機</span>（遅い）→ <span class="prop">オレンジの短い滑走路</span>でも<span class="jet">長い滑走路</span>でもOK</li>
         <li>滑走路には <b>▶ の矢印の向き</b>からしか降りられません</li>
         <li>線が入口につながると色が変わり、着陸が決まります</li>
         <li>飛行機どうしがぶつかったらゲームオーバー</li>
       </ul>
       <p>ベスト：<span class="score">${best}</span> 機</p>
       <button id="go">はじめる</button>
+      ${speedRow()}
       <p><a href="../index.html">← 地底の竜 -XANADU-like- へ</a></p>`);
     bindButtons({ go: startGame });
   }
@@ -470,7 +501,8 @@
       <p>着陸：<span class="score">${landed}</span> 機</p>
       <button id="resume">つづける</button><br>
       <button id="restart" class="sub">はじめから</button>
-      <button id="title" class="sub">タイトルへ</button>`);
+      <button id="title" class="sub">タイトルへ</button>
+      ${speedRow()}`);
     bindButtons({ resume: resume, restart: startGame, title: showTitle });
   }
   function resume() {
@@ -486,11 +518,17 @@
       <p class="score">${landed} 機</p>
       <p>${landed >= best && landed > 0 ? 'ベスト更新！' : `ベスト：${best} 機`}</p>
       <button id="again">もう一度</button><br>
-      <button id="title" class="sub">タイトルへ</button>`);
+      <button id="title" class="sub">タイトルへ</button>
+      ${speedRow()}`);
     bindButtons({ again: startGame, title: showTitle });
   }
 
   pauseBtn.addEventListener('click', () => { unlockAudio(); showPause(); });
+  speedBtn.addEventListener('click', () => {
+    unlockAudio();
+    const i = SPEEDS.indexOf(gameSpeed);
+    setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
+  });
   soundBtn.addEventListener('click', () => {
     unlockAudio();
     muted = !muted;
@@ -500,8 +538,12 @@
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
       if (state === 'play') showPause(); else if (state === 'pause') resume();
+    } else if (e.key === '+' || e.key === '=' || e.key === ';') {
+      stepSpeed(1);
+    } else if (e.key === '-') {
+      stepSpeed(-1);
     } else if (e.key === 'Enter' || e.key === ' ') {
-      const btn = overlay.querySelector('button');
+      const btn = overlay.querySelector('button:not(.sp)');
       if (btn && !overlay.classList.contains('hidden')) { e.preventDefault(); btn.click(); }
     }
   });
@@ -599,7 +641,7 @@
     ctx.restore();
 
     // 対応する飛行機の線を描いている間は、入口を光らせる
-    if ([...dragging].some(p => p.T.runway === rw.kind)) {
+    if ([...dragging].some(p => canLand(p, rw))) {
       ctx.strokeStyle = rw.color;
       ctx.lineWidth = 3;
       ctx.globalAlpha = 0.5 + 0.4 * Math.sin(clock * 8);
@@ -611,7 +653,7 @@
     const lx = rw.x - rw.dy * (hw + 22), ly = rw.y + rw.dx * (hw + 22);
     ctx.font = '15px DotGothic16, monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const label = rw.kind === 'long' ? '旅客機' : 'プロペラ機';
+    const label = rw.kind === 'long' ? '旅客機・プロペラ機' : 'プロペラ機';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(label, lx, ly);
     ctx.fillStyle = rw.color; ctx.fillText(label, lx, ly);
     ctx.textBaseline = 'alphabetic';
@@ -796,6 +838,6 @@
   // 動作確認用（ブラウザのコンソールから状態を見られるように）
   window.airportLine = {
     get state() { return state; }, get planes() { return planes; }, get runways() { return runways; },
-    get landed() { return landed; }, get world() { return { W, H, scale, offX, offY }; },
+    get landed() { return landed; }, get speed() { return gameSpeed; }, get world() { return { W, H, scale, offX, offY }; },
   };
 })();
