@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2';
-const VERSION = '1.6'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '1.7'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -61,6 +61,7 @@ function tone(freq, dur = 0.08, type = 'square', vol = 0.05, slide = 0, delay = 
 }
 const SFX = {
   hit: () => tone(260, 0.06, 'square', 0.05, -160),
+  crit: () => { tone(900, 0.05, 'square', 0.06, -300); tone(300, 0.12, 'sawtooth', 0.06, -200, 0.04); },
   miss: () => tone(500, 0.05, 'triangle', 0.04, 200),
   hurt: () => tone(140, 0.18, 'sawtooth', 0.06, -80),
   kill: () => { tone(400, 0.08, 'square', 0.05, -300); tone(200, 0.15, 'triangle', 0.05, -150, 0.05); },
@@ -233,8 +234,13 @@ function spawnEnemy(ch, tx, ty, key) {
   const d = ENEMIES[ch];
   const e = Object.assign({ scale: 2 }, d, {
     type: ch, key, maxHp: d.hp, vx: 0, vy: 0, dir: -1, cool: 30, flash: 0, onGround: false,
-    t: rnd(0, 200), state: 'hover', st: 0, wx: 0, wy: 0,
+    t: rnd(0, 200), state: d.ai === 'boss' ? 'hover' : 'patrol', st: 0,
+    stun: 0, hear: 0, lost: 0, turnT: 0, aimT: 0, retreat: 0, alarmed: 0, mark: null,
+    turnDelay: d.turnDelay || 32, turnRate: d.turnRate || 0.04,
   });
+  e.dir = Math.random() < 0.5 ? -1 : 1;
+  e.ang = e.dir > 0 ? 0 : Math.PI;
+  e.wang = e.ang;
   e.x = tx * T + (T - e.w) / 2;
   e.y = (e.ai === 'fly' || e.ai === 'ghost' || area.def.view === 'top') ? ty * T + (T - e.h) / 2 : ty * T + T - e.h;
   enemies.push(e);
@@ -472,11 +478,13 @@ function playerAttack(e, axis) {
   const p = G.p;
   p.atkCool = Math.max(8, 20 - Math.floor(p.agi / 2));
   const cx = (p.x + p.w / 2 + e.x + e.w / 2) / 2, cy = (p.y + p.h / 2 + e.y + e.h / 2) / 2;
-  if (Math.random() < 0.08) { addText(cx, cy, 'MISS', '#aaaaff'); SFX.miss(); return; }
+  const back = !e.peaceful && isBehind(e);
+  if (!back && Math.random() < 0.08) { addText(cx, cy, 'MISS', '#aaaaff'); SFX.miss(); return; }
   const cw = curWeapon(), w = WEAPONS[cw.id];
   const wlBefore = profLevel(cw.exp);
   const atk = p.str + w.atk * (1 + 0.15 * wlBefore);
-  let dmg = Math.max(1, Math.round(atk - e.def * 0.6 + rnd(-1, 2)));
+  // 背後からの一撃は必中・防御無視・2.5倍
+  let dmg = back ? Math.round(atk * 2.5 + rnd(0, 3)) : Math.max(1, Math.round(atk - e.def * 0.6 + rnd(-1, 2)));
   if (e.boss && !w.slayer) {
     dmg = 0;
     msgThrottle('slayer', 'ドラゴンの鱗は硬すぎる！ ドラゴンスレイヤーでなければ…', 'bad', 300);
@@ -485,17 +493,32 @@ function playerAttack(e, axis) {
   const wl = profLevel(cw.exp);
   if (wl > wlBefore) msg(`${w.name}の熟練度が上がった！（Lv${wl}）`, 'good');
   slash(cx, cy);
-  damageEnemy(e, dmg);
+  if (back && dmg) {
+    SFX.crit();
+    addText(cx, cy - 18, '背後！', '#ffd84a');
+    slash(cx, cy); burst(cx, cy, '#ffd84a', 10);
+    msgThrottle('backtip', '背後からの一撃！ 大ダメージを与えた。', 'good', 900);
+  }
+  damageEnemy(e, dmg, back);
+  // 攻撃された敵はこちらに気づき、一瞬ひるむ。背後から斬られた敵は慌てて振り向く
+  if (!e.dead && !e.boss) {
+    notice(e);
+    e.stun = 10;
+    if (back) { // 背後から斬られた敵は慌てて振り向く（次の背後攻撃にはもう一度回り込む必要がある）
+      e.turnT = Math.max(e.turnT, Math.floor(e.turnDelay * 0.5));
+      e.alarmed = 40;
+    }
+  }
   if (!e.boss && !e.guardian && !e.dead) {
     const s = axis === 'y' ? Math.sign(e.y - p.y) : Math.sign(e.x - p.x);
     if (axis === 'y') moveY(e, s * 6, false); else moveX(e, s * 6);
   }
 }
 
-function damageEnemy(e, dmg) {
+function damageEnemy(e, dmg, crit) {
   e.hp -= dmg;
   e.flash = 8;
-  addText(e.x + e.w / 2, e.y, String(dmg), dmg ? '#ffffff' : '#888888');
+  addText(e.x + e.w / 2, e.y, crit ? `${dmg}!` : String(dmg), crit ? '#ffd84a' : dmg ? '#ffffff' : '#888888');
   SFX.hit();
   if (e.hp <= 0) killEnemy(e);
 }
@@ -671,10 +694,40 @@ function pickItem(it) {
 }
 
 // ---------------------------------------------------------------- 敵
+// ---------------------------------------------------------------- 敵の向き
+// 敵は「見ている方向」を持つ。プレイヤーが反対側（背後）にいると、
+// 気づかれにくく、攻撃されず、こちらの攻撃は大ダメージになる。
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+function turnToward(a, target, rate) {
+  const d = angDiff(target, a);
+  return a + clamp(d, -rate, rate);
+}
+function facingVec(e) {
+  if (isTop() && !e.boss) return [Math.cos(e.ang), Math.sin(e.ang)];
+  return [e.dir, 0];
+}
+function isBehind(e) {
+  const p = G.p;
+  const dx = (p.x + p.w / 2) - (e.x + e.w / 2), dy = (p.y + p.h / 2) - (e.y + e.h / 2);
+  if (isTop() && !e.boss) {
+    const [fx, fy] = facingVec(e);
+    return (dx * fx + dy * fy) / (Math.hypot(dx, dy) || 1) < -0.3;
+  }
+  return Math.abs(dx) > 2 && Math.sign(dx) === -e.dir;
+}
+function markEnemy(e, ch) { e.mark = { ch, t: 45 }; }
+function notice(e) {
+  if (e.state === 'chase') return;
+  e.state = 'chase'; e.lost = 0; e.hear = 0;
+  markEnemy(e, '!');
+}
+function loseTrack(e) { e.state = 'patrol'; e.lost = 0; markEnemy(e, '?'); }
+
 function updateEnemy(e) {
   const p = G.p;
   if (e.cool > 0) e.cool--;
   if (e.flash > 0) e.flash--;
+  if (e.mark && --e.mark.t <= 0) e.mark = null;
   e.t++;
   const dx = (p.x + p.w / 2) - (e.x + e.w / 2);
   const dy = (p.y + p.h / 2) - (e.y + e.h / 2);
@@ -684,32 +737,21 @@ function updateEnemy(e) {
   } else if (isTop()) {
     updateEnemyTop(e, dx, dy);
   } else if (e.ai === 'walk') {
-    let sp = e.speed;
-    if (e.chase && Math.abs(dx) < T * 6 && Math.abs(dy) < T * 1.5) { e.dir = dx > 0 ? 1 : -1; sp *= 1.3; }
-    if (touching(e, p, 1) && Math.sign(dx) === e.dir) sp = 0;
-    const hit = moveX(e, e.dir * sp);
-    if (hit) e.dir *= -1;
-    else if (e.onGround && sp) {
-      const fx = e.dir > 0 ? e.x + e.w + 1 : e.x - 1;
-      const tx = Math.floor(fx / T), ty = Math.floor((e.y + e.h + 2) / T);
-      if (!isSolid(tx, ty) && !isPlatform(tx, ty)) { e.x -= e.dir * sp; e.dir *= -1; }
-    }
-    e.vy = Math.min(e.vy + 0.45, 9);
-    e.onGround = false;
-    if (moveY(e, e.vy, true)) { if (e.vy > 0) e.onGround = true; e.vy = 0; }
-    if (e.shoot && e.t % e.shoot.rate === 0 && Math.abs(dx) < T * 8 && Math.abs(dy) < T) {
-      e.dir = dx > 0 ? 1 : -1;
-      enemyShot(e, e.dir * e.shoot.speed, 0, e.shoot.dmg);
-    }
+    updateWalker(e, dx, dy);
   } else if (e.ai === 'fly') {
     let vx, vy;
-    if (Math.abs(dx) < T * 7 && Math.abs(dy) < T * 4) {
+    if (e.retreat > 0) { // 噛みついた後はいったん離れる：背中を見せる隙
+      e.retreat--;
+      vx = -Math.sign(dx || 1) * e.speed * 1.1;
+      vy = -0.6;
+    } else if (Math.abs(dx) < T * 7 && Math.abs(dy) < T * 4) {
       vx = Math.sign(dx) * e.speed;
       vy = Math.sign(dy) * e.speed * 0.6;
     } else {
       vx = Math.cos(e.t / 40) * e.speed * 0.6;
       vy = 0;
     }
+    if (e.stun > 0) { e.stun--; vx = vy = 0; }
     if (vx) e.dir = Math.sign(vx);
     if (moveX(e, vx)) e.t += 40;
     moveY(e, vy + Math.sin(e.t / 8) * 0.9, false);
@@ -730,40 +772,119 @@ function updateEnemy(e) {
       moveX(e, clamp(target - e.x, -T + 1, T - 1));
     }
   }
-  // 接触攻撃
+  // 接触攻撃（背後にいるプレイヤーには攻撃できない）
   const contact = e.boss ? overlap(e, p) : isTop() ? touching2(e, p, 2) : touching(e, p, 2);
-  if (!e.peaceful && e.cool <= 0 && p.inv <= 0 && contact) {
+  if (!e.peaceful && e.cool <= 0 && !(e.stun > 0) && p.inv <= 0 && contact && (e.boss || !isBehind(e))) {
     hurtPlayer(e.atk, e);
     e.cool = e.rate;
+    if (e.ai === 'fly') e.retreat = 50;
   }
 }
 
-// 見下ろし視点の敵：近づくと追いかけ、離れていればうろつく
+// 横視点で歩く敵：巡回 → 前方に見つけたら追跡 → 見失えば巡回に戻る
+function updateWalker(e, dx, dy) {
+  const p = G.p;
+  const dist = Math.abs(dx), sameLevel = Math.abs(dy) < T * 1.5;
+  const inFront = Math.sign(dx) === e.dir;
+  let sp = e.speed;
+  // ひるんでいる間も振り向きは進む（背後からの連続攻撃で封じ込められないように）
+  const stunned = e.stun > 0;
+  if (stunned) e.stun--;
+  if (e.shoot) {
+    if (stunned) { /* ひるみ中は構えも移動もしない */ }
+    // 魔法使い：近づかれると背を向けて距離をとり、離れていれば振り向いて構えてから撃つ
+    else if (e.aimT > 0) {
+      sp = 0;
+      if (--e.aimT === 0) enemyShot(e, e.dir * e.shoot.speed, 0, e.shoot.dmg);
+    } else if (sameLevel && dist < T * 3) {
+      e.dir = dx > 0 ? -1 : 1; sp *= 2.2;
+    } else if (sameLevel && dist < T * 8 && e.t % e.shoot.rate === 0) {
+      e.dir = dx > 0 ? 1 : -1; e.aimT = 20; markEnemy(e, '!');
+    }
+  } else if (e.chase) {
+    if (e.state !== 'chase') {
+      // 前方の視界に入るか、すぐ後ろでしばらく気配を感じると気づく
+      if (sameLevel && inFront && dist < T * 6) notice(e);
+      else if (sameLevel && dist < T * 1.5) { if (++e.hear > 70) notice(e); }
+      else e.hear = 0;
+    } else {
+      if (!sameLevel || dist > T * 9) { if (++e.lost > 150) loseTrack(e); } else e.lost = 0;
+      if (!inFront && dist > 4) {
+        // 振り向くには時間がかかる：その間は背中ががら空き
+        sp *= 0.3;
+        if (++e.turnT >= e.turnDelay) { e.dir = -e.dir; e.turnT = 0; }
+      } else {
+        e.turnT = 0; sp *= 1.3;
+      }
+    }
+  }
+  if (stunned || (touching(e, p, 1) && inFront)) sp = 0;
+  const hit = moveX(e, e.dir * sp);
+  if (hit) e.dir *= -1;
+  else if (e.onGround && sp) {
+    const fx = e.dir > 0 ? e.x + e.w + 1 : e.x - 1;
+    const tx = Math.floor(fx / T), ty = Math.floor((e.y + e.h + 2) / T);
+    if (!isSolid(tx, ty) && !isPlatform(tx, ty)) {
+      e.x -= e.dir * sp;
+      if (e.state !== 'chase') e.dir *= -1; // 追跡中は崖の手前で立ち止まる
+    }
+  }
+  e.vy = Math.min(e.vy + 0.45, 9);
+  e.onGround = false;
+  if (moveY(e, e.vy, true)) { if (e.vy > 0) e.onGround = true; e.vy = 0; }
+}
+
+// 見下ろし視点の敵：向いている方向にしか進めず、振り向く速さに限りがある。
+// プレイヤーの方が速く回り込めるので、背後をとることができる。
 function updateEnemyTop(e, dx, dy) {
-  const dist = Math.hypot(dx, dy);
-  const sp = e.ai === 'ghost' ? 0.5 : (e.speed || 1);
-  let vx, vy;
-  if (e.ai !== 'ghost' && dist < T * 7) {
-    if (touching2(e, G.p, 1)) { vx = vy = 0; } else { vx = dx / dist * sp; vy = dy / dist * sp; }
+  const dist = Math.hypot(dx, dy) || 1;
+  if (e.ai === 'ghost') {
+    if (e.t % 90 === 0) e.wang = Math.random() * Math.PI * 2;
+    e.ang = turnToward(e.ang, e.wang, 0.05);
+    moveX(e, Math.cos(e.ang) * 0.5); moveY(e, Math.sin(e.ang) * 0.5, false);
+    if (Math.abs(Math.cos(e.ang)) > 0.2) e.dir = Math.sign(Math.cos(e.ang));
+    return;
+  }
+  const target = Math.atan2(dy, dx);
+  const diff = angDiff(target, e.ang);
+  const rate = e.alarmed > 0 ? e.turnRate * 2.5 : e.turnRate;
+  if (e.alarmed > 0) e.alarmed--;
+  let s = 0;
+  if (e.stun > 0) {
+    e.stun--;
+    if (e.state === 'chase') e.ang = turnToward(e.ang, target, rate); // ひるんでも振り向きは止まらない
+  } else if (e.state !== 'chase') {
+    if (dist < T * 7 && Math.abs(diff) < 1.2) notice(e);
+    else if (dist < T * 1.6) { if (++e.hear > 70) notice(e); }
+    else e.hear = 0;
+    if (e.t % 90 === 0) e.wang = Math.random() * Math.PI * 2;
+    e.ang = turnToward(e.ang, e.wang, 0.04);
+    s = (e.speed || 1) * 0.5;
   } else {
-    if (e.t % 90 === 0) { const a = Math.random() * Math.PI * 2; e.wx = Math.cos(a); e.wy = Math.sin(a); }
-    vx = e.wx * sp * 0.6; vy = e.wy * sp * 0.6;
+    if (dist > T * 10) { if (++e.lost > 150) loseTrack(e); } else e.lost = 0;
+    e.ang = turnToward(e.ang, target, rate);
+    s = (e.speed || 1) * Math.max(0, Math.cos(angDiff(target, e.ang))); // 向いていない方へは進めない
+    if (touching2(e, G.p, 1) && Math.abs(angDiff(target, e.ang)) < 0.8) s = 0;
+    if (e.shoot && e.t % e.shoot.rate === 0 && Math.abs(angDiff(target, e.ang)) < 0.6) {
+      const spread = e.shoot.spread ? [-0.3, 0, 0.3] : [0];
+      for (const d of spread) enemyShot(e, Math.cos(e.ang + d) * e.shoot.speed, Math.sin(e.ang + d) * e.shoot.speed, e.shoot.dmg);
+    }
   }
-  if (vx) e.dir = Math.sign(vx);
-  if (moveX(e, vx)) e.wx *= -1;
-  if (moveY(e, vy, false)) e.wy *= -1;
-  if (e.shoot && e.t % e.shoot.rate === 0 && dist < T * 9) {
-    const a = Math.atan2(dy, dx);
-    const spread = e.shoot.spread ? [-0.3, 0, 0.3] : [0];
-    for (const d of spread) enemyShot(e, Math.cos(a + d) * e.shoot.speed, Math.sin(a + d) * e.shoot.speed, e.shoot.dmg);
+  if (s) {
+    const hx = moveX(e, Math.cos(e.ang) * s), hy = moveY(e, Math.sin(e.ang) * s, false);
+    if ((hx || hy) && e.state !== 'chase') e.wang = e.ang + Math.PI;
   }
+  if (Math.abs(Math.cos(e.ang)) > 0.2) e.dir = Math.sign(Math.cos(e.ang));
 }
 
 function updateBoss(e, dx) {
   const p = G.p;
   const pcx = p.x + p.w / 2, ecx = e.x + e.w / 2;
   const aw = area.w * T, floorY = (area.h - 1) * T;
-  e.dir = dx > 0 ? 1 : -1;
+  // 竜も振り向くのに時間がかかる。急降下の突進中は進む方向しか見ていない
+  if (e.state === 'sweep') e.dir = e.sweep;
+  else if (Math.sign(dx) !== e.dir) { if (++e.turnT > 50) { e.dir = -e.dir; e.turnT = 0; } }
+  else e.turnT = 0;
   if (e.state === 'hover') {
     const tx = clamp(pcx - e.w / 2 + Math.sin(e.t / 70) * 140, T, aw - T - e.w);
     const ty = T * 1.5 + Math.sin(e.t / 25) * 16;
@@ -774,7 +895,7 @@ function updateBoss(e, dx) {
       for (const d of [-0.25, 0, 0.25]) enemyShot(e, Math.cos(ang + d) * e.shoot.speed, Math.sin(ang + d) * e.shoot.speed, e.shoot.dmg);
       SFX.fire();
     }
-    if (e.t % 420 === 0) { e.state = 'dive'; e.st = 0; e.sweep = e.dir; msg('ドラゴンが急降下してきた！', 'bad'); }
+    if (e.t % 420 === 0) { e.state = 'dive'; e.st = 0; e.sweep = dx > 0 ? 1 : -1; msg('ドラゴンが急降下してきた！', 'bad'); }
   } else if (e.state === 'dive') {
     e.y += 4;
     if (e.y >= floorY - e.h) { e.y = floorY - e.h; e.state = 'sweep'; e.st = 0; }
@@ -810,6 +931,7 @@ function updateShots() {
         s.spell.exp++;
         if (profLevel(s.spell.exp) > before) msg(`${SPELLS[s.spell.id].name}の熟練度が上がった！（Lv${profLevel(s.spell.exp)}）`, 'good');
         damageEnemy(e, dmg);
+        if (!e.dead && !e.boss) notice(e);
         burst(s.x + 6, s.y + 6, '#80c0ff', 8);
         if (s.pierce) s.hit.add(e); else { s.life = 0; break; }
       }
@@ -1638,6 +1760,24 @@ function render() {
     const yoff = e.boss ? 6 : 0;
     drawSpr(name, e.x + e.w / 2 - size / 2 - cam.x, e.y + e.h - size + yoff + sq - cam.y, e.dir > 0, e.scale);
     ctx.globalAlpha = 1;
+    if (isTop() && !e.peaceful) { // 見下ろし視点では向きを小さな三角で示す
+      const [fx, fy] = facingVec(e);
+      const r = Math.max(e.w, e.h) / 2 + 7;
+      const cx = e.x + e.w / 2 - cam.x + fx * r, cy = e.y + e.h / 2 - cam.y + fy * r;
+      ctx.fillStyle = e.state === 'chase' ? '#ff6060' : '#ffd84a';
+      ctx.beginPath();
+      ctx.moveTo(cx + fx * 6, cy + fy * 6);
+      ctx.lineTo(cx - fy * 5, cy + fx * 5);
+      ctx.lineTo(cx + fy * 5, cy - fx * 5);
+      ctx.fill();
+    }
+    if (e.mark) {
+      ctx.font = `bold 18px ${FONT}`; ctx.textAlign = 'center';
+      const mx = e.x + e.w / 2 - cam.x, my = e.y - 12 - cam.y - (45 - e.mark.t) * 0.2;
+      ctx.fillStyle = '#000'; ctx.fillText(e.mark.ch, mx + 1, my + 1);
+      ctx.fillStyle = e.mark.ch === '!' ? '#ff5050' : '#a0c8ff'; ctx.fillText(e.mark.ch, mx, my);
+      ctx.textAlign = 'left';
+    }
     if (!e.peaceful && e.hp < e.maxHp) {
       const bw = e.boss || e.guardian ? 60 : 24;
       const bx = e.x + e.w / 2 - bw / 2 - cam.x, by = e.y - 8 - cam.y;
