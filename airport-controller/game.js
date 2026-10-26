@@ -36,7 +36,8 @@
   let planes = [], incoming = [], particles = [], texts = [];
   let state = 'title'; // title / play / pause / crash / over
   let landed = 0, elapsed = 0, spawnTimer = 0, crashT = 0, clearT = 0, beepT = 0, clock = 0;
-  let stageNo = 0, unlocked = 0; // stageNo は STAGES の添字。unlocked は遊べる最後のステージの添字
+  let stageNo = 0, unlocked = 0; // stageNo は STAGES の添字（STAGES.length はハイスコアモード）。unlocked は遊べる最後のステージの添字
+  let endlessOpen = loadFlag('airportline.endless'), best = loadNum('airportline.best'), newRecord = false;
   let toast = null;
   let gameSpeed = loadSpeed();
   const drags = new Map(); // 指（touch の identifier、マウスは 'mouse'）→ 線を描いている飛行機
@@ -60,6 +61,15 @@
       const v = +localStorage.getItem('airportline.speed');
       return SPEEDS.includes(v) ? v : 1;
     } catch (e) { return 1; }
+  }
+  function loadFlag(key) {
+    try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
+  }
+  function loadNum(key) {
+    try { return Math.max(0, Math.floor(+localStorage.getItem(key) || 0)); } catch (e) { return 0; }
+  }
+  function save(key, v) {
+    try { localStorage.setItem(key, String(v)); } catch (e) { /* 保存できなくても遊べる */ }
   }
   function saveUnlocked() {
     try { localStorage.setItem('airportline.stage', String(unlocked)); } catch (e) { /* 保存できなくても遊べる */ }
@@ -117,8 +127,18 @@
     { goal: 15, prop: 0.5,  runways: ['L1'],             max: 5, interval: 4.2, note: '滑走路はついに1本！ 全部の飛行機が同じ滑走路へ' },
     { goal: 20, prop: 0.5,  runways: ['L1'],             max: 6, interval: 3.6, note: '最終ステージ。順番をよく考えて着陸させよう' },
   ];
+  // ハイスコアモード：ステージ8のあと。全部の滑走路を使い、ぶつかるまで続く。
+  // 着陸させるほど同時に飛ぶ機数が増え、出てくる間隔が短くなる
+  const ENDLESS = STAGES.length;
+  const endlessStage = () => ({
+    goal: Infinity, prop: 0.5, runways: ['L1', 'L2', 'S1'],
+    max: Math.min(9, 4 + Math.floor(landed / 10)),
+    interval: Math.max(2.2, 4.4 - landed * 0.03),
+    note: 'ぶつかるまで終わらない！ 着陸させるほど飛行機が増えていく。どこまで記録を伸ばせるか挑戦しよう',
+  });
+  const isEndless = () => stageNo === ENDLESS;
   unlocked = loadUnlocked();
-  const stage = () => STAGES[stageNo];
+  const stage = () => isEndless() ? endlessStage() : STAGES[stageNo];
   const hasProps = () => stage().prop > 0;
 
   function resize() {
@@ -205,7 +225,7 @@
     stageNo = n;
     planes = []; incoming = []; particles = []; texts = [];
     drags.clear();
-    landed = 0; elapsed = 0; spawnTimer = 1; crashT = 0; clearT = 0; toast = null;
+    landed = 0; elapsed = 0; spawnTimer = 1; crashT = 0; clearT = 0; toast = null; newRecord = false;
     buildLayout();
   }
   function startStage() {
@@ -213,7 +233,8 @@
     hideOverlay();
   }
 
-  const spawnInterval = () => Math.max(stage().interval * 0.65, stage().interval - landed * 0.1);
+  const spawnInterval = () => isEndless() ? stage().interval
+    : Math.max(stage().interval * 0.65, stage().interval - landed * 0.1);
   const maxPlanes = () => stage().max;
 
   // 画面の端に「もうすぐ来る」印を出し、少しあとで飛行機が入ってくる
@@ -331,6 +352,12 @@
     texts.push({ x: p.x, y: p.y - 20, text: '+1', color: p.T.color, t: 1.2 });
     if (landed >= stage().goal) stageClear();
     else sfx.land();
+    if (isEndless() && landed > best) {
+      if (!newRecord && best > 0) showToast('ベスト更新！');
+      newRecord = true;
+      best = landed;
+      save('airportline.best', best);
+    }
   }
 
   // 目標の機数に届いたら、その場で空を止めてクリアの演出へ
@@ -340,6 +367,7 @@
     drags.clear();
     incoming = [];
     if (stageNo + 1 > unlocked && stageNo + 1 < STAGES.length) { unlocked = stageNo + 1; saveUnlocked(); }
+    if (stageNo === STAGES.length - 1 && !endlessOpen) { endlessOpen = true; save('airportline.endless', 1); }
     sfx.clear();
   }
 
@@ -560,7 +588,8 @@
     state = 'title';
     setStage(unlocked);
     const stageButtons = STAGES.map((_, i) =>
-      `<button class="st${i === unlocked ? ' on' : ''}" data-stage="${i}"${i > unlocked ? ' disabled' : ''}>${i + 1}</button>`).join('');
+      `<button class="st${i === unlocked ? ' on' : ''}" data-stage="${i}"${i > unlocked ? ' disabled' : ''}>${i + 1}</button>`).join('') +
+      `<button class="st endless" data-stage="${ENDLESS}"${endlessOpen ? '' : ' disabled'} aria-label="ハイスコアモード">∞</button>`;
     showOverlay(`
       <h1>エアポート管制官</h1>
       <p>飛行機を指（マウス）でなぞって線を引き、滑走路まで誘導しよう！</p>
@@ -573,6 +602,9 @@
       </ul>
       <button id="go">${unlocked > 0 ? `つづきから（ステージ ${unlocked + 1}）` : 'はじめる'}</button>
       <div class="stages">ステージを選ぶ<div>${stageButtons}</div></div>
+      <p class="best">${endlessOpen
+        ? `∞ ハイスコアモード　ベスト <span class="score">${best}</span> 機`
+        : '∞ ハイスコアモードはステージ8をクリアすると遊べます'}</p>
       ${speedRow()}
       <p><a href="../index.html">← ゲーム一覧へ</a></p>`);
     bindButtons({ go: () => showStageIntro(unlocked) });
@@ -582,6 +614,12 @@
   }
 
   function stageInfo(n) {
+    if (n === ENDLESS) {
+      return `
+      <p class="goal">ベスト：<span class="score">${best}</span> 機</p>
+      <p>飛行機：<span class="jet">旅客機</span>・<span class="prop">プロペラ機</span><br>滑走路：<span class="jet">長い 2 本</span>・<span class="prop">短い 1 本</span></p>
+      <p class="note">${endlessStage().note}</p>`;
+    }
     const st = STAGES[n];
     const kinds = st.prop > 0
       ? `<span class="jet">旅客機</span>・<span class="prop">プロペラ機</span>`
@@ -598,7 +636,7 @@
     setStage(n);
     state = 'intro';
     showOverlay(`
-      <h1>ステージ ${n + 1}</h1>
+      <h1>${stageName(n)}</h1>
       ${stageInfo(n)}
       <button id="start">スタート</button><br>
       <button id="title" class="sub">タイトルへ</button>
@@ -606,15 +644,19 @@
     bindButtons({ start: startStage, title: showTitle });
   }
 
+  function stageName(n) { return n === ENDLESS ? 'ハイスコアモード' : `ステージ ${n + 1}`; }
+
   function showClear() {
     const last = stageNo === STAGES.length - 1;
     if (last) {
       showOverlay(`
         <h1>全ステージクリア！</h1>
         <p>すべての飛行機を無事に着陸させました。<br>おつかれさまでした、管制官！</p>
-        <button id="again">ステージ ${stageNo + 1} をもう一度</button><br>
+        <p><b>ハイスコアモード</b>が遊べるようになりました。<br>ぶつかるまで、何機着陸させられるかな？</p>
+        <button id="endless">ハイスコアモードへ</button><br>
+        <button id="again" class="sub">ステージ ${stageNo + 1} をもう一度</button>
         <button id="title" class="sub">タイトルへ</button>`);
-      bindButtons({ again: () => showStageIntro(stageNo), title: showTitle });
+      bindButtons({ endless: () => showStageIntro(ENDLESS), again: () => showStageIntro(stageNo), title: showTitle });
       return;
     }
     showOverlay(`
@@ -633,7 +675,9 @@
     drags.clear();
     showOverlay(`
       <h1>ポーズ</h1>
-      <p>ステージ ${stageNo + 1}　着陸：<span class="score">${landed}</span> / ${stage().goal} 機</p>
+      <p>${isEndless()
+        ? `ハイスコアモード　着陸：<span class="score">${landed}</span> 機（ベスト ${best}）`
+        : `ステージ ${stageNo + 1}　着陸：<span class="score">${landed}</span> / ${stage().goal} 機`}</p>
       <button id="resume">つづける</button><br>
       <button id="restart" class="sub">やり直す</button>
       <button id="title" class="sub">タイトルへ</button>
@@ -647,6 +691,18 @@
   }
 
   function showOver() {
+    if (isEndless()) {
+      showOverlay(`
+        <h2>衝突！</h2>
+        <p>ハイスコアモード　着陸させた飛行機</p>
+        <p class="score">${landed} 機</p>
+        <p>${newRecord ? '<b class="record">ベスト更新！</b>' : `ベスト ${best} 機`}</p>
+        <button id="again">もう一度</button><br>
+        <button id="title" class="sub">タイトルへ</button>
+        ${speedRow()}`);
+      bindButtons({ again: () => { setStage(stageNo); startStage(); }, title: showTitle });
+      return;
+    }
     showOverlay(`
       <h2>衝突！</h2>
       <p>ステージ ${stageNo + 1}　着陸させた飛行機</p>
@@ -928,13 +984,16 @@
       ctx.fillStyle = color; ctx.fillText(text, x, y);
     };
     if (state !== 'title') {
-      line(`着陸 ${landed} / ${stage().goal}`, left, top, '#ffffff');
+      const endless = isEndless();
+      line(endless ? `着陸 ${landed}` : `着陸 ${landed} / ${stage().goal}`, left, top, '#ffffff');
       ctx.font = '14px DotGothic16, monospace';
-      line(`ステージ ${stageNo + 1}`, left, top + 26, '#ffd84a');
-      // 目標までの進み具合
+      line(endless ? `ベスト ${best}` : `ステージ ${stageNo + 1}`, left, top + 26, newRecord ? '#7dff9a' : '#ffd84a');
+      // 目標（ハイスコアモードではベスト）までの進み具合
       const bw = HUD_W - 14, bx = left, by = top + 46;
+      const goal = endless ? best : stage().goal;
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by, bw, 6);
-      ctx.fillStyle = '#ffd84a'; ctx.fillRect(bx, by, bw * Math.min(1, landed / stage().goal), 6);
+      ctx.fillStyle = newRecord ? '#7dff9a' : '#ffd84a';
+      ctx.fillRect(bx, by, bw * (goal > 0 ? Math.min(1, landed / goal) : 0), 6);
     }
     if (state === 'clear') {
       ctx.font = '40px DotGothic16, monospace';

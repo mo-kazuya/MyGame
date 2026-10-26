@@ -66,6 +66,9 @@ html, body {
 }
 .panel button.st.on { background: #2a6ad0; border-color: #cfe0ff; }
 .panel button.st:disabled { opacity: 0.35; cursor: default; }
+.panel button.st.endless { background: #4a3a10; border-color: #ffd84a; color: #ffd84a; }
+.panel .best { margin: 8px 0 0; font-size: 14px; color: #c8d4e8; }
+.panel .record { color: #7dff9a; font-size: 18px; }
 .panel .speeds { margin-top: 12px; font-size: 14px; color: #c8d4e8; }
 .panel .speeds div { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 6px; }
 .panel button.sp {
