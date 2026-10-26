@@ -14,9 +14,13 @@ html, body {
 }
 #buttons {
   position: fixed; z-index: 2;
-  top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+  /* 左上の「着陸 x / y」の表示の横に置く（上の端から入ってくる飛行機の邪魔をしないように）。
+     game.js の HUD_W と合わせる */
+  top: calc(8px + env(safe-area-inset-top)); left: calc(146px + env(safe-area-inset-left));
   display: flex; gap: 8px;
 }
+#buttons.playing #speed { display: none; } /* 遊んでいる間は押し間違えないように隠す（ポーズ画面で変えられる） */
+#buttons button, #overlay { touch-action: manipulation; }
 #buttons button {
   width: 44px; height: 44px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.35);
@@ -27,7 +31,9 @@ html, body {
 #overlay {
   position: fixed; inset: 0; z-index: 3;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0.5); padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
 #overlay.hidden { display: none; }
 .panel {
