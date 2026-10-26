@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2'; // 旧名のまま（これまでのセーブを引き継ぐため）
-const VERSION = '2.0'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '2.1'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -118,7 +118,7 @@ function newPlayer() {
 }
 // mapVer: 迷宮の形を変えたら上げる（古いセーブの座標を直すため）
 const MAP_VER = 2;
-const newState = () => ({ taken: {}, opened: {}, killed: {}, dug: {}, flags: {}, visited: {}, mapVer: MAP_VER });
+const newState = () => ({ taken: {}, opened: {}, killed: {}, dug: {}, flags: {}, visited: {}, warps: {}, mapVer: MAP_VER });
 
 // 迷宮の天井を高くする前（mapVer 1）のセーブを、今のマップの座標に直す
 function migrateSave(d) {
@@ -337,6 +337,7 @@ function updatePlayer() {
   if (pressed.up && p.onGround && !p.climb) {
     const c = tileAtPx(cx, p.y + p.h - 4);
     if (DOOR_CHARS.has(c)) { enterDoor(c); return; }
+    if (c === 'O') { openWarp(Math.floor(cx / T), Math.floor((p.y + p.h - 4) / T)); return; }
   }
 
   // はしご
@@ -438,6 +439,11 @@ function afterPlayerMove() {
       hurtPlayer(14 + totalDef(), null, 'トゲに刺さった！');
       p.vy = -5;
     }
+  }
+  // 旅の石碑に触れると目覚める
+  if (!isTop()) {
+    const wx = Math.floor((p.x + p.w / 2) / T), wy = Math.floor((p.y + p.h - 4) / T);
+    if (tile(wx, wy) === 'O') wakeWarp(wx, wy);
   }
   // アイテム取得
   for (const it of items) if (!it.got && overlap(p, it)) pickItem(it);
@@ -1309,6 +1315,44 @@ function openEquip(kind) {
   }, 'play');
 }
 
+// ---------------------------------------------------------------- 旅の石碑（ショートカット）
+const warpKey = (id, x, y) => `${id}:${x}:${y}`;
+function wakeWarp(tx, ty) {
+  const key = warpKey(area.id, tx, ty);
+  if (G.state.warps[key] || area.id === 'town') return;
+  G.state.warps[key] = true;
+  SFX.level();
+  burst(tx * T + 16, ty * T + 8, '#80e0ff', 20);
+  msg('旅の石碑が目を覚ました。目覚めた石碑どうしは ↑ で行き来できる。', 'info');
+}
+const warpAwake = w => w.area === 'town' || !!G.state.warps[w.key];
+
+function openWarp(tx, ty) {
+  const here = warpKey(area.id, tx, ty);
+  SFX.door();
+  openMenu(() => {
+    const dests = WARPS.filter(w => w.key !== here && warpAwake(w));
+    return {
+      title: '旅の石碑',
+      text: dests.length ? '石碑に手をかざすと、目覚めた石碑の場所が浮かんだ。どこへ行く？'
+                         : 'まだ目覚めた石碑がない。迷宮の石碑に触れると、ここから行き来できるようになる。',
+      items: dests.map(w => ({
+        label: w.name,
+        action: () => {
+          const p = G.p;
+          G.fade = { t: 0, dur: 40, cb: () => {
+            loadArea(w.area, { pos: { x: w.x * T + (T - p.w) / 2, y: w.y * T + T - p.h } });
+            p.onGround = true;
+            msg(`${w.name}へ移動した。`, 'info');
+          } };
+          SFX.magic();
+          return 'close';
+        },
+      })).concat([{ label: 'やめる', action: () => 'close' }]),
+    };
+  }, 'play');
+}
+
 // ---------------------------------------------------------------- 店
 let shopTalk = '';
 function openShop(c) {
@@ -1575,7 +1619,7 @@ function drawFloor(g, th) {
 function bgKey(ch) {
   // 背景の上に描く記号は、まず背景を描く
   if (area.def.theme !== 'town') return '.';
-  return ch === 'a' ? ',' : ch === 't' ? ' ' : '.';
+  return ch === 'a' ? ',' : ch === 't' || ch === 'O' ? ' ' : '.';
 }
 
 function drawTile(ch, tx, ty, sx, sy) {
@@ -1695,6 +1739,18 @@ function drawTile(ch, tx, ty, sx, sy) {
     // 上向き矢印（↑で入れる）
     if (Math.floor(G.time / 30) % 2 === 0 && Math.abs(G.p.x + G.p.w / 2 - (sx + cam.x + 16)) < 24 && Math.abs(G.p.y - (sy + cam.y)) < 32) {
       ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(isTop() ? 'Z' : '↑', sx + 16, sy - 6);
+    }
+  } else if (ch === 'O') { // 旅の石碑
+    const awake = area.id === 'town' || G.state.warps[warpKey(area.id, tx, ty)];
+    ctx.fillStyle = '#3a3a48'; ctx.fillRect(sx + 6, sy - 10, T - 12, T + 10);
+    ctx.fillStyle = '#6a6a7c'; ctx.fillRect(sx + 8, sy - 8, T - 16, T + 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(sx + 8, sy - 8, 2, T + 6);
+    ctx.fillStyle = '#2a2a34'; ctx.fillRect(sx + 4, sy + T - 4, T - 8, 4);
+    const glow = awake ? 0.6 + 0.4 * Math.sin(G.time / 15) : 0;
+    ctx.fillStyle = awake ? `rgba(120,220,255,${glow})` : '#40404c';
+    ctx.fillRect(sx + 14, sy - 2, 4, 14); ctx.fillRect(sx + 11, sy + 3, 10, 4); ctx.fillRect(sx + 13, sy + 14, 6, 3);
+    if (Math.floor(G.time / 30) % 2 === 0 && Math.abs(G.p.x + G.p.w / 2 - (sx + cam.x + 16)) < 24 && Math.abs(G.p.y - (sy + cam.y)) < 32) {
+      ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('↑', sx + 16, sy - 16);
     }
   } else if (SHOP_CHARS.has(ch)) {
     ctx.fillStyle = '#3a2410'; ctx.fillRect(sx + 4, sy + 4, T - 8, T - 4);

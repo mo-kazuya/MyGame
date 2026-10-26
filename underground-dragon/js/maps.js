@@ -8,6 +8,7 @@
     a-h 他エリアへの扉       K W A F S I T  王城（訓練所）・武器・防具・道具・魔法・宿屋・寺院
     $ 金  ! 薬  * 魔法の水  ? 鍵  % 食料  & ドラゴンスレイヤー
     m つるはし  G 魔法の翼  Q 砂時計  R 命の霊薬  L ランプ
+    O  旅の石碑（触れると目覚め、目覚めた石碑どうしを行き来できる）
     1-9 X Y Z 敵（data.js の ENEMIES）   P  開始位置
   レンガ（#）はつるはしで掘れる。壁の向こうに隠し部屋があることも…
 */
@@ -28,6 +29,7 @@ function makeTown() {
   for (let y = 5; y <= 10; y++) for (let x = 74 - (y - 5); x < W; x++) g[y][x] = '=';
   for (let x = 69; x <= 75; x++) g[10][x] = ',';
   g[10][76] = 'a';
+  g[10][68] = 'O'; // 旅の石碑
   g[10][2] = 'P';
   return g.map(r => r.join(''));
 }
@@ -70,12 +72,12 @@ function migrateDungeonRow(y) {
 }
 
 const D1 = makeDungeon(44, 5, m => {
-  m.at(0, 2, 'a'); m.at(0, 12, '1'); m.at(0, 22, '1'); m.at(0, 30, '$'); m.lad(0, 40); m.wall(0, 41); m.at(0, 42, '!');
+  m.at(0, 2, 'a'); m.at(0, 4, 'O'); m.at(0, 12, '1'); m.at(0, 22, '1'); m.at(0, 30, '$'); m.lad(0, 40); m.wall(0, 41); m.at(0, 42, '!');
   m.step(0, 15, 17); m.step(0, 25, 27);
   m.at(1, 30, '2'); m.at(1, 18, '1'); m.at(1, 4, '!'); m.at(1, 10, 'm'); m.pit(1, 24, 25); m.lad(1, 3);
   m.step(1, 14, 16); m.step(1, 20, 22);
   m.at(1, 34, 'W'); m.at(1, 36, 'A'); m.at(1, 38, 'F'); // 地下の店
-  m.at(2, 10, '2'); m.at(2, 20, '3'); m.block(2, 28, 28); m.at(2, 38, 'e'); m.lad(2, 41);
+  m.at(2, 10, '2'); m.at(2, 20, '3'); m.block(2, 28, 28); m.at(2, 38, 'e'); m.at(2, 36, 'O'); m.lad(2, 41);
   m.step(2, 16, 18); m.step(2, 23, 25); m.step(2, 30, 32);
   m.at(3, 30, '3'); m.at(3, 15, '1'); m.at(3, 8, '%'); m.lad(3, 4); m.wall(3, 2); m.at(3, 1, '$');
   m.step(3, 11, 13); m.step(3, 26, 28); m.step(3, 34, 36);
@@ -84,11 +86,11 @@ const D1 = makeDungeon(44, 5, m => {
 });
 
 const D2 = makeDungeon(52, 6, m => {
-  m.at(0, 2, 'b'); m.at(0, 10, '3'); m.at(0, 20, '2'); m.at(0, 28, '4'); m.spikes(0, 34, 34); m.at(0, 44, '$'); m.lad(0, 48);
+  m.at(0, 2, 'b'); m.at(0, 4, 'O'); m.at(0, 10, '3'); m.at(0, 20, '2'); m.at(0, 28, '4'); m.spikes(0, 34, 34); m.at(0, 44, '$'); m.lad(0, 48);
   m.step(0, 6, 8); m.step(0, 24, 26); m.step(0, 33, 35);
   m.at(1, 40, '7'); m.at(1, 30, '3'); m.at(1, 20, '2'); m.at(1, 8, '!'); m.pit(1, 15, 16); m.lad(1, 2); m.wall(1, 49); m.at(1, 50, 'R');
   m.step(1, 26, 28); m.step(1, 35, 37);
-  m.at(2, 10, '4'); m.spikes(2, 25, 26); m.at(2, 32, '6'); m.at(2, 45, 'e'); m.lad(2, 49);
+  m.at(2, 10, '4'); m.spikes(2, 25, 26); m.at(2, 32, '6'); m.at(2, 45, 'e'); m.at(2, 43, 'O'); m.lad(2, 49);
   m.step(2, 6, 8); m.step(2, 24, 27); m.step(2, 36, 38);
   m.at(3, 40, '4'); m.at(3, 20, '2'); m.at(3, 12, '3'); m.lad(3, 3);
   m.at(3, 26, 'W'); m.at(3, 28, 'A'); m.at(3, 30, 'F'); m.at(3, 32, 'T'); // 地下の店
@@ -100,18 +102,18 @@ const D2 = makeDungeon(52, 6, m => {
 });
 
 const D3 = makeDungeon(56, 6, m => {
-  m.at(0, 2, 'c'); m.at(0, 12, '4'); m.at(0, 22, '5'); m.spikes(0, 30, 31); m.at(0, 40, '6'); m.at(0, 48, '!'); m.lad(0, 52); m.wall(0, 53); m.at(0, 54, 'G');
+  m.at(0, 2, 'c'); m.at(0, 4, 'O'); m.at(0, 12, '4'); m.at(0, 22, '5'); m.spikes(0, 30, 31); m.at(0, 40, '6'); m.at(0, 48, '!'); m.lad(0, 52); m.wall(0, 53); m.at(0, 54, 'G');
   m.step(0, 8, 10); m.step(0, 18, 20); m.step(0, 29, 32); m.step(0, 36, 38);
   m.at(1, 45, '5'); m.at(1, 35, '7'); m.at(1, 25, '6'); m.pit(1, 18, 19); m.at(1, 8, '$'); m.lad(1, 3);
   m.step(1, 11, 13); m.step(1, 28, 30); m.step(1, 41, 43);
-  m.at(2, 15, '5'); m.at(2, 20, '2'); m.at(2, 28, '2'); m.at(2, 36, '4'); m.at(2, 46, 'e'); m.lad(2, 53);
+  m.at(2, 15, '5'); m.at(2, 20, '2'); m.at(2, 28, '2'); m.at(2, 36, '4'); m.at(2, 46, 'e'); m.at(2, 44, 'O'); m.lad(2, 53);
   m.at(2, 5, 'W'); m.at(2, 7, 'A'); m.at(2, 9, 'F'); m.at(2, 49, 'T'); // 地下の店
   m.step(2, 24, 26); m.step(2, 32, 34); m.step(2, 40, 42);
   m.at(3, 44, '6'); m.at(3, 34, '5'); m.lock(3, 20); m.at(3, 12, '&'); m.at(3, 8, '!'); m.lad(3, 30);
   m.step(3, 24, 26); m.step(3, 38, 40);
   m.at(4, 40, '5'); m.at(4, 20, '6'); m.at(4, 10, '4'); m.at(4, 48, '*'); m.block(4, 26, 26); m.lad(4, 4); m.wall(4, 2); m.at(4, 1, '$');
   m.step(4, 14, 16); m.step(4, 34, 36); m.step(4, 44, 46);
-  m.at(5, 20, '5'); m.at(5, 30, '5'); m.at(5, 38, '%'); m.spikes(5, 44, 44); m.at(5, 48, 'Q'); m.at(5, 52, 'd');
+  m.at(5, 20, '5'); m.at(5, 30, '5'); m.at(5, 38, '%'); m.spikes(5, 44, 44); m.at(5, 48, 'Q'); m.at(5, 52, 'd'); m.at(5, 50, 'O');
   m.step(5, 24, 26); m.step(5, 43, 45);
 });
 
@@ -196,3 +198,15 @@ const AREAS = {
   lair: { name: '竜の巣',          theme: 'lair', bg: '.', map: LAIR, links: { d: ['d3', 'd'] }, noDig: true,
           intro: 'すさまじい殺気を感じる…！' },
 };
+
+// 旅の石碑の一覧。名前は近くの扉から決める
+const WARPS = [];
+for (const [id, def] of Object.entries(AREAS)) {
+  def.map.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch !== 'O') return;
+    let near = '';
+    for (let d = 1; d <= 4 && !near; d++) for (const c of [row[x - d], row[x + d]]) if (/[a-e]/.test(c || '')) near = c;
+    const label = id === 'town' ? '洞窟の入口' : near === 'e' ? '守護者の間の前' : near === 'd' ? '竜の巣の扉の前' : '入口';
+    WARPS.push({ key: `${id}:${x}:${y}`, area: id, x, y, name: id === 'town' ? `${def.name}（${label}）` : `${def.name}・${label}` });
+  }));
+}
