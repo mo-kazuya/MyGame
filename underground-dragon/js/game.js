@@ -2,7 +2,7 @@
 const T = 32, VW = 640, VH = 416;
 const FONT = "'DotGothic16', 'MS Gothic', monospace";
 const SAVE_KEY = 'xanaduLike.save.v2'; // 旧名のまま（これまでのセーブを引き継ぐため）
-const VERSION = '1.9'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
+const VERSION = '2.1'; // index.html の ?v= と合わせる（スマホのキャッシュ対策）
 
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d');
@@ -116,7 +116,39 @@ function newPlayer() {
     train: { str: 0, def: 0, agi: 0, int: 0, hp: 0 },
   };
 }
-const newState = () => ({ taken: {}, opened: {}, killed: {}, dug: {}, flags: {}, visited: {} });
+// mapVer: 迷宮の形を変えたら上げる（古いセーブの座標を直すため）
+const MAP_VER = 2;
+const newState = () => ({ taken: {}, opened: {}, killed: {}, dug: {}, flags: {}, visited: {}, warps: {}, mapVer: MAP_VER });
+
+// 迷宮の天井を高くする前（mapVer 1）のセーブを、今のマップの座標に直す
+function migrateSave(d) {
+  if ((d.state.mapVer || 1) >= MAP_VER) return;
+  const dungeon = id => ['d1', 'd2', 'd3'].includes(id);
+  const fix = obj => {
+    const out = {};
+    for (const k of Object.keys(obj || {})) {
+      const [id, x, y] = k.split(':');
+      if (!dungeon(id)) { out[k] = obj[k]; continue; }
+      const ny = migrateDungeonRow(+y);
+      out[`${id}:${x}:${ny}`] = obj[k];
+    }
+    return out;
+  };
+  const s = d.state;
+  s.taken = fix(s.taken); s.killed = fix(s.killed); s.dug = fix(s.dug);
+  // 鍵の扉は高さ4マスになったので、開けた扉は上の2マスも開ける
+  const opened = fix(s.opened);
+  for (const k of Object.keys(opened)) {
+    const [id, x, y] = k.split(':');
+    if (dungeon(id)) for (let dy = 1; dy <= 2; dy++) opened[`${id}:${x}:${+y - dy}`] = true;
+  }
+  s.opened = opened;
+  if (dungeon(d.at)) {
+    const row = Math.floor((d.p.y + d.p.h - 1) / T);
+    d.p.y += (migrateDungeonRow(row) - row) * T;
+  }
+  s.mapVer = MAP_VER;
+}
 
 function newGame() {
   G = { p: newPlayer(), state: newState(), time: 0, fade: null, endTimer: 0, xpNotice: 0, freeze: 0 };
@@ -148,6 +180,8 @@ function loadGame() {
   try {
     const d = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (!d) return false;
+    d.state = d.state || {};
+    migrateSave(d);
     G = { p: Object.assign(newPlayer(), d.p), state: Object.assign(newState(), d.state), time: d.time || 0,
           fade: null, endTimer: 0, xpNotice: 0, freeze: 0 };
     logLines.length = 0;
@@ -186,7 +220,7 @@ const tileAtPx = (x, y) => tile(Math.floor(x / T), Math.floor(y / T));
 const isSolid = (tx, ty) => SOLID.has(tile(tx, ty));
 function isPlatform(tx, ty) {
   const c = tile(tx, ty);
-  return c === '-' || (c === 'H' && tile(tx, ty - 1) !== 'H');
+  return c === '-' || c === '_' || (c === 'H' && tile(tx, ty - 1) !== 'H');
 }
 
 function loadArea(id, entry) {
@@ -303,6 +337,7 @@ function updatePlayer() {
   if (pressed.up && p.onGround && !p.climb) {
     const c = tileAtPx(cx, p.y + p.h - 4);
     if (DOOR_CHARS.has(c)) { enterDoor(c); return; }
+    if (c === 'O') { openWarp(Math.floor(cx / T), Math.floor((p.y + p.h - 4) / T)); return; }
   }
 
   // はしご
@@ -350,7 +385,7 @@ function updatePlayer() {
       burst(p.x + p.w / 2, p.y + p.h, '#c0e0ff', 8);
     }
   }
-  if (keys.down && !keys.dig && p.onGround && tileAtPx(cx, p.y + p.h + 2) === '-') p.drop = 10;
+  if (keys.down && !keys.dig && p.onGround && '-_'.includes(tileAtPx(cx, p.y + p.h + 2))) p.drop = 10;
   p.vy = Math.min(p.vy + 0.45, 9);
 
   const hx = moveX(p, p.vx);
@@ -404,6 +439,11 @@ function afterPlayerMove() {
       hurtPlayer(14 + totalDef(), null, 'トゲに刺さった！');
       p.vy = -5;
     }
+  }
+  // 旅の石碑に触れると目覚める
+  if (!isTop()) {
+    const wx = Math.floor((p.x + p.w / 2) / T), wy = Math.floor((p.y + p.h - 4) / T);
+    if (tile(wx, wy) === 'O') wakeWarp(wx, wy);
   }
   // アイテム取得
   for (const it of items) if (!it.got && overlap(p, it)) pickItem(it);
@@ -1275,6 +1315,44 @@ function openEquip(kind) {
   }, 'play');
 }
 
+// ---------------------------------------------------------------- 旅の石碑（ショートカット）
+const warpKey = (id, x, y) => `${id}:${x}:${y}`;
+function wakeWarp(tx, ty) {
+  const key = warpKey(area.id, tx, ty);
+  if (G.state.warps[key] || area.id === 'town') return;
+  G.state.warps[key] = true;
+  SFX.level();
+  burst(tx * T + 16, ty * T + 8, '#80e0ff', 20);
+  msg('旅の石碑が目を覚ました。目覚めた石碑どうしは ↑ で行き来できる。', 'info');
+}
+const warpAwake = w => w.area === 'town' || !!G.state.warps[w.key];
+
+function openWarp(tx, ty) {
+  const here = warpKey(area.id, tx, ty);
+  SFX.door();
+  openMenu(() => {
+    const dests = WARPS.filter(w => w.key !== here && warpAwake(w));
+    return {
+      title: '旅の石碑',
+      text: dests.length ? '石碑に手をかざすと、目覚めた石碑の場所が浮かんだ。どこへ行く？'
+                         : 'まだ目覚めた石碑がない。迷宮の石碑に触れると、ここから行き来できるようになる。',
+      items: dests.map(w => ({
+        label: w.name,
+        action: () => {
+          const p = G.p;
+          G.fade = { t: 0, dur: 40, cb: () => {
+            loadArea(w.area, { pos: { x: w.x * T + (T - p.w) / 2, y: w.y * T + T - p.h } });
+            p.onGround = true;
+            msg(`${w.name}へ移動した。`, 'info');
+          } };
+          SFX.magic();
+          return 'close';
+        },
+      })).concat([{ label: 'やめる', action: () => 'close' }]),
+    };
+  }, 'play');
+}
+
 // ---------------------------------------------------------------- 店
 let shopTalk = '';
 function openShop(c) {
@@ -1289,6 +1367,7 @@ function openShop(c) {
     fn();
     SFX.coin();
   };
+  const town = area.id === 'town';
   const limited = (n, label, fn) => () => {
     if (n() >= MAX_ITEM) { shopTalk = `「${label}はもう持ちきれないよ。」`; SFX.bad(); return; }
     fn();
@@ -1315,7 +1394,7 @@ function openShop(c) {
     }), 'play');
   } else if (c === 'W') {
     openMenu(() => ({
-      title: '武器屋「鋼の牙」',
+      title: town ? '武器屋「鋼の牙」' : '地下の武器商人',
       text: wallet() + (shopTalk ? talk() : '\n\n「使い慣れた剣は、新しい名剣にも勝ることがあるぜ。」'),
       items: Object.entries(WEAPONS).filter(([, w]) => w.price > 0).map(([id, w]) => {
         const owned = p.weapons.some(x => x.id === id);
@@ -1332,7 +1411,7 @@ function openShop(c) {
     }), 'play');
   } else if (c === 'A') {
     openMenu(() => ({
-      title: '防具屋「岩の守り」',
+      title: town ? '防具屋「岩の守り」' : '地下の防具商人',
       text: wallet() + talk(),
       items: Object.entries(ARMORS).filter(([, a]) => a.price > 0).map(([id, a]) => {
         const owned = p.armors.includes(id);
@@ -1349,7 +1428,6 @@ function openShop(c) {
       })).concat([leave]),
     }), 'play');
   } else if (c === 'F') {
-    const town = area.id === 'town';
     openMenu(() => ({
       title: town ? '道具屋「旅のそなえ」' : '地下の商人',
       text: wallet() + `\n食料 ${p.food}　薬 ${p.potions}　魔法の水 ${p.elixirs}　鍵 ${p.keys}　つるはし ${p.tools.mattock}` +
@@ -1407,7 +1485,7 @@ function openShop(c) {
     openMenu(() => {
       const need = needXp(p.level);
       return {
-        title: '寺院',
+        title: town ? '寺院' : '地底の祠',
         text: wallet() + `\nレベル ${p.level}　経験値 ${p.xp} / ${need}　カルマ ${p.karma}` +
           (shopTalk ? talk() : '\n\n「地下には罪なき精霊がさまよう。彼らを殺めてはならぬ。」'),
         items: [
@@ -1541,7 +1619,7 @@ function drawFloor(g, th) {
 function bgKey(ch) {
   // 背景の上に描く記号は、まず背景を描く
   if (area.def.theme !== 'town') return '.';
-  return ch === 'a' ? ',' : ch === 't' ? ' ' : '.';
+  return ch === 'a' ? ',' : ch === 't' || ch === 'O' ? ' ' : '.';
 }
 
 function drawTile(ch, tx, ty, sx, sy) {
@@ -1625,6 +1703,11 @@ function drawTile(ch, tx, ty, sx, sy) {
     ctx.fillStyle = '#9a6a3a'; ctx.fillRect(sx, sy, T, 8);
     ctx.fillStyle = '#c8945a'; ctx.fillRect(sx, sy, T, 2);
     ctx.fillStyle = '#5a3a1a'; ctx.fillRect(sx + 15, sy, 2, 8); ctx.fillRect(sx, sy + 7, T, 1);
+  } else if (ch === '_') { // 石の足場
+    ctx.fillStyle = T2.stoneDark; ctx.fillRect(sx, sy, T, 14);
+    ctx.fillStyle = T2.stone; ctx.fillRect(sx + 1, sy, T - 2, 11);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(sx + 1, sy, T - 2, 2);
+    ctx.fillStyle = T2.stoneDark; ctx.fillRect(sx + 9, sy + 5, 4, 2); ctx.fillRect(sx + 21, sy + 7, 3, 2);
   } else if (ch === '^') {
     ctx.fillStyle = '#c8c8d8';
     for (let i = 0; i < 4; i++) {
@@ -1656,6 +1739,18 @@ function drawTile(ch, tx, ty, sx, sy) {
     // 上向き矢印（↑で入れる）
     if (Math.floor(G.time / 30) % 2 === 0 && Math.abs(G.p.x + G.p.w / 2 - (sx + cam.x + 16)) < 24 && Math.abs(G.p.y - (sy + cam.y)) < 32) {
       ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText(isTop() ? 'Z' : '↑', sx + 16, sy - 6);
+    }
+  } else if (ch === 'O') { // 旅の石碑
+    const awake = area.id === 'town' || G.state.warps[warpKey(area.id, tx, ty)];
+    ctx.fillStyle = '#3a3a48'; ctx.fillRect(sx + 6, sy - 10, T - 12, T + 10);
+    ctx.fillStyle = '#6a6a7c'; ctx.fillRect(sx + 8, sy - 8, T - 16, T + 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(sx + 8, sy - 8, 2, T + 6);
+    ctx.fillStyle = '#2a2a34'; ctx.fillRect(sx + 4, sy + T - 4, T - 8, 4);
+    const glow = awake ? 0.6 + 0.4 * Math.sin(G.time / 15) : 0;
+    ctx.fillStyle = awake ? `rgba(120,220,255,${glow})` : '#40404c';
+    ctx.fillRect(sx + 14, sy - 2, 4, 14); ctx.fillRect(sx + 11, sy + 3, 10, 4); ctx.fillRect(sx + 13, sy + 14, 6, 3);
+    if (Math.floor(G.time / 30) % 2 === 0 && Math.abs(G.p.x + G.p.w / 2 - (sx + cam.x + 16)) < 24 && Math.abs(G.p.y - (sy + cam.y)) < 32) {
+      ctx.fillStyle = '#fff'; ctx.font = `14px ${FONT}`; ctx.textAlign = 'center'; ctx.fillText('↑', sx + 16, sy - 16);
     }
   } else if (SHOP_CHARS.has(ch)) {
     ctx.fillStyle = '#3a2410'; ctx.fillRect(sx + 4, sy + 4, T - 8, T - 4);
