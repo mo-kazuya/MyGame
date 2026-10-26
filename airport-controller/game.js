@@ -28,6 +28,12 @@
     prop: { name: 'プロペラ機', speed: 24, r: 11, color: '#ffb43c', runways: ['long', 'short'] },
   };
   const canLand = (p, rw) => p.T.runways.includes(rw.kind);
+  // 燃料（オプション）：出てきてから着陸を決めるまでに飛べる秒数。切れたら墜落
+  const FUEL = { jet: 40, prop: 50 };
+  const MAYDAY_FUEL = 20;   // 緊急機（オプション）の燃料。燃料オプションがオフでも緊急機には付く
+  const MAYDAY_BONUS = 3;   // 緊急機を降ろしたときの着陸数
+  const MAYDAY_COLOR = '#ff3b30';
+  const LOW_FUEL = 0.3;     // 燃料がこの割合を切ったら点滅して知らせる
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]; // 全体のスピード（ゲームの時間の進み方）
   const RUNWAY_COLOR = { long: TYPES.jet.color, short: TYPES.prop.color };
 
@@ -35,7 +41,8 @@
   let runways = [], decor = [];
   let planes = [], incoming = [], particles = [], texts = [];
   let state = 'title'; // title / play / pause / crash / over
-  let landed = 0, elapsed = 0, spawnTimer = 0, crashT = 0, clearT = 0, beepT = 0, clock = 0;
+  let landed = 0, elapsed = 0, spawnTimer = 0, crashT = 0, clearT = 0, beepT = 0, fuelBeepT = 0, clock = 0;
+  let overReason = 'crash'; // ゲームオーバーの理由：crash（衝突）/ fuel（燃料切れ）
   let stageNo = 0, unlocked = 0; // stageNo は STAGES の添字（STAGES.length はハイスコアモード）。unlocked は遊べる最後のステージの添字
   // ハイスコアモードの滑走路の数（1〜3本）と、本数ごとのベスト。3本の記録は最初の版と同じ保存キー
   const BEST_KEY = { 1: 'airportline.best1', 2: 'airportline.best2', 3: 'airportline.best' };
@@ -44,6 +51,8 @@
   const bests = { 1: loadNum(BEST_KEY[1]), 2: loadNum(BEST_KEY[2]), 3: loadNum(BEST_KEY[3]) };
   let toast = null;
   let gameSpeed = loadSpeed();
+  // オプション：燃料ゲージ・緊急機を出すかどうか（ブラウザに保存）
+  const options = { fuel: loadFlag('airportline.fuel'), mayday: loadFlag('airportline.mayday') };
   const drags = new Map(); // 指（touch の identifier、マウスは 'mouse'）→ 線を描いている飛行機
 
   // ---------- 小さな道具 ----------
@@ -108,6 +117,8 @@
     spawn: () => tone(440, 0.15, 'sine', 0.06, 520),
     clear: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i === 3 ? 0.5 : 0.14, 'triangle', 0.13, null, i * 0.13)),
     crash: () => { tone(200, 0.8, 'sawtooth', 0.2, 40); tone(90, 1.0, 'square', 0.15, 30, 0.05); },
+    lowFuel: () => { tone(330, 0.12, 'square', 0.06); tone(262, 0.16, 'square', 0.06, null, 0.13); },
+    mayday: () => [0, 0.3, 0.6].forEach(d => tone(700, 0.28, 'sawtooth', 0.07, 1100, d)),
   };
 
   // ---------- 画面サイズと滑走路の配置 ----------
@@ -232,6 +243,7 @@
     planes = []; incoming = []; particles = []; texts = [];
     drags.clear();
     landed = 0; elapsed = 0; spawnTimer = 1; crashT = 0; clearT = 0; toast = null; newRecord = false;
+    fuelBeepT = 0; overReason = 'crash';
     buildLayout();
   }
   function startStage() {
@@ -246,6 +258,9 @@
   // 画面の端に「もうすぐ来る」印を出し、少しあとで飛行機が入ってくる
   function trySpawn() {
     const type = Math.random() < stage().prop ? 'prop' : 'jet';
+    // 緊急機：同時に1機まで。始まってすぐは出さない
+    const mayday = options.mayday && elapsed > 8 && Math.random() < 0.18 &&
+      !planes.some(p => p.mayday && p.state === 'fly') && !incoming.some(s => s.mayday);
     for (let tries = 0; tries < 12; tries++) {
       const edge = Math.floor(Math.random() * 4), t = rand(0.1, 0.9), m = 40;
       const x = edge === 0 ? t * W : edge === 1 ? W + m : edge === 2 ? t * W : -m;
@@ -253,8 +268,8 @@
       if (planes.some(p => dist(p.x, p.y, x, y) < 170)) continue;
       if (incoming.some(s => dist(s.x, s.y, x, y) < 170)) continue;
       const tx = W * rand(0.3, 0.7), ty = H * rand(0.3, 0.7);
-      incoming.push({ type, x, y, dir: Math.atan2(ty - y, tx - x), t: 2.5 });
-      sfx.spawn();
+      incoming.push({ type, x, y, dir: Math.atan2(ty - y, tx - x), t: 2.5, mayday });
+      if (mayday) { sfx.mayday(); showToast('メーデー！ 緊急機が接近中'); } else sfx.spawn();
       return true;
     }
     return false;
@@ -262,12 +277,16 @@
 
   let nextId = 1;
   function addPlane(s) {
+    const fuel = s.mayday ? MAYDAY_FUEL : options.fuel ? FUEL[s.type] : null; // null は燃料なし
     planes.push({
       id: nextId++, type: s.type, T: TYPES[s.type], x: s.x, y: s.y,
       dir: s.dir, heading: s.dir, path: [], rw: null,
       state: 'fly', lt: 0, entered: false, warn: false, spin: 0,
+      mayday: !!s.mayday, fuel, fuelMax: fuel,
     });
   }
+  // 燃料が残りわずか（点滅させ、音で知らせる）
+  const lowFuel = p => p.fuel !== null && p.fuel < p.fuelMax * LOW_FUEL;
 
   function update(dt) {
     clock += dt;
@@ -306,6 +325,17 @@
     }
     planes = planes.filter(p => !(p.state === 'landing' && p.lt > 2.6));
     if (state !== 'play') return; // この移動でステージクリアになった
+
+    // 燃料（着陸が決まった機は滑走路まで持つことにして減らさない）
+    let anyLow = false;
+    for (const p of planes) {
+      if (p.state !== 'fly' || p.fuel === null || p.rw) continue;
+      p.fuel -= dt;
+      if (p.fuel <= 0) { fuelOut(p); return; }
+      if (lowFuel(p)) anyLow = true;
+    }
+    fuelBeepT -= dt;
+    if (anyLow && fuelBeepT <= 0) { sfx.lowFuel(); fuelBeepT = 1.2; }
 
     // 接近と衝突
     const air = planes.filter(p => p.state === 'fly');
@@ -354,8 +384,10 @@
     p.lt = 0;
     p.path = [];
     for (const [id, q] of drags) if (q === p) drags.delete(id);
-    landed++;
-    texts.push({ x: p.x, y: p.y - 20, text: '+1', color: p.T.color, t: 1.2 });
+    const gain = p.mayday ? MAYDAY_BONUS : 1;
+    landed += gain;
+    texts.push({ x: p.x, y: p.y - 20, text: '+' + gain, color: p.mayday ? MAYDAY_COLOR : p.T.color, t: p.mayday ? 1.8 : 1.2 });
+    if (p.mayday) showToast('緊急機 着陸成功！');
     if (landed >= stage().goal) stageClear();
     else sfx.land();
     if (isEndless() && landed > best()) {
@@ -392,11 +424,18 @@
   }
 
   function crash(a, b) {
+    a.crashed = b.crashed = true;
+    explode((a.x + b.x) / 2, (a.y + b.y) / 2, 'crash');
+  }
+  function fuelOut(p) {
+    p.crashed = true;
+    explode(p.x, p.y, 'fuel');
+  }
+  function explode(cx, cy, reason) {
     state = 'crash';
     crashT = 0;
-    a.crashed = b.crashed = true;
+    overReason = reason;
     drags.clear();
-    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
     for (let i = 0; i < 70; i++) {
       const ang = rand(0, Math.PI * 2), sp = rand(20, 160);
       particles.push({
@@ -569,6 +608,9 @@
     overlay.querySelectorAll('[data-speed]').forEach(b => {
       b.addEventListener('click', () => setSpeed(+b.dataset.speed));
     });
+    overlay.querySelectorAll('[data-opt]').forEach(b => {
+      b.addEventListener('click', () => toggleOpt(b.dataset.opt));
+    });
   }
 
   // ---------- スピード設定 ----------
@@ -590,6 +632,22 @@
   }
   setSpeed(gameSpeed);
 
+  // ---------- オプション（燃料・緊急機） ----------
+  const OPT_LABEL = { fuel: '燃料', mayday: '緊急機' };
+  function optionRow() {
+    return `<div class="speeds">オプション<div>${Object.keys(OPT_LABEL).map(k =>
+      `<button class="sp${options[k] ? ' on' : ''}" data-opt="${k}">${OPT_LABEL[k]} ${options[k] ? 'ON' : 'OFF'}</button>`).join('')}</div>
+      <small class="optnote">燃料：待たせすぎると燃料切れで墜落<br>緊急機：燃料が少ない赤い機。降ろすと +${MAYDAY_BONUS}</small></div>`;
+  }
+  function toggleOpt(k) {
+    options[k] = !options[k];
+    save('airportline.' + k, options[k] ? 1 : 0);
+    overlay.querySelectorAll(`[data-opt="${k}"]`).forEach(b => {
+      b.classList.toggle('on', options[k]);
+      b.textContent = `${OPT_LABEL[k]} ${options[k] ? 'ON' : 'OFF'}`;
+    });
+  }
+
   function showTitle() {
     state = 'title';
     setStage(unlocked);
@@ -605,6 +663,7 @@
         <li>滑走路には <b>▶ の矢印の向き</b>からしか降りられません</li>
         <li>線が入口につながると色が変わり、着陸が決まります</li>
         <li>目標の機数を着陸させるとステージクリア。ぶつかったらゲームオーバー</li>
+        <li>オプションで<b>燃料</b>（まわりの輪が減っていき、切れると墜落）と<b class="mayday">緊急機</b>を出せます</li>
       </ul>
       <button id="go">${unlocked > 0 ? `つづきから（ステージ ${unlocked + 1}）` : 'はじめる'}</button>
       <div class="stages">ステージを選ぶ<div>${stageButtons}</div></div>
@@ -612,6 +671,7 @@
         ? `∞ ハイスコアモードのベスト<br>${[1, 2, 3].map(n => `滑走路${n}本 <span class="score">${bests[n]}</span>`).join('　')}`
         : '∞ ハイスコアモードはステージ8をクリアすると遊べます'}</p>
       ${speedRow()}
+      ${optionRow()}
       <p><a href="../index.html">← ゲーム一覧へ</a></p>`);
     bindButtons({ go: () => showStageIntro(unlocked) });
     overlay.querySelectorAll('[data-stage]').forEach(b => {
@@ -644,7 +704,8 @@
       ${stageInfo(n)}
       <button id="start">スタート</button><br>
       <button id="title" class="sub">タイトルへ</button>
-      ${speedRow()}`);
+      ${speedRow()}
+      ${optionRow()}`);
     bindButtons({ start: startStage, title: showTitle });
     overlay.querySelectorAll('[data-rw]').forEach(b => {
       b.addEventListener('click', () => {
@@ -702,25 +763,28 @@
   }
 
   function showOver() {
+    const head = overReason === 'fuel' ? '燃料切れ！' : '衝突！';
     if (isEndless()) {
       showOverlay(`
-        <h2>衝突！</h2>
+        <h2>${head}</h2>
         <p>ハイスコアモード（滑走路${endlessRw}本）　着陸させた飛行機</p>
         <p class="score">${landed} 機</p>
         <p>${newRecord ? '<b class="record">ベスト更新！</b>' : `ベスト ${best()} 機`}</p>
         <button id="again">もう一度</button><br>
         <button id="title" class="sub">タイトルへ</button>
-        ${speedRow()}`);
+        ${speedRow()}
+        ${optionRow()}`);
       bindButtons({ again: () => { setStage(stageNo); startStage(); }, title: showTitle });
       return;
     }
     showOverlay(`
-      <h2>衝突！</h2>
+      <h2>${head}</h2>
       <p>ステージ ${stageNo + 1}　着陸させた飛行機</p>
       <p class="score">${landed} / ${stage().goal} 機</p>
       <button id="again">もう一度</button><br>
       <button id="title" class="sub">タイトルへ</button>
-      ${speedRow()}`);
+      ${speedRow()}
+      ${optionRow()}`);
     bindButtons({ again: () => { setStage(stageNo); startStage(); }, title: showTitle });
   }
 
@@ -897,8 +961,19 @@
     ctx.rotate(p.heading);
     planeShape(p, r, 'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.28)', null);
     ctx.restore();
-    // 接近警告・つかんでいる印
+    // 接近警告・つかんでいる印・燃料
     if (p.state === 'fly') {
+      if (p.fuel !== null) drawFuel(p, alpha);
+      if (p.mayday && !p.crashed) {
+        ctx.fillStyle = MAYDAY_COLOR;
+        ctx.globalAlpha = alpha * (0.5 + 0.3 * Math.sin(clock * 8));
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.T.r * 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.font = 'bold 14px DotGothic16, monospace';
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText('SOS', p.x, p.y - p.T.r * 2.3 - 6);
+        ctx.fillStyle = MAYDAY_COLOR; ctx.fillText('SOS', p.x, p.y - p.T.r * 2.3 - 6);
+      }
       if (p.warn || p.crashed) {
         ctx.strokeStyle = '#ff3b30';
         ctx.lineWidth = 2.5;
@@ -916,6 +991,19 @@
     ctx.rotate(p.heading);
     planeShape(p, r, p.T.color, '#f4f6fa', p);
     ctx.restore();
+  }
+
+  // 燃料の残り：機体のまわりの輪が時計回りに減っていく。残りわずかで赤く点滅
+  function drawFuel(p, alpha) {
+    const k = clamp(p.fuel / p.fuelMax, 0, 1), R = p.T.r * 2.3;
+    const low = lowFuel(p);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = low ? MAYDAY_COLOR : k < 0.6 ? '#ffd84a' : '#7dff9a';
+    ctx.globalAlpha = alpha * (low ? 0.5 + 0.5 * Math.sin(clock * (8 + 10 * (1 - k / LOW_FUEL))) : 0.85);
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+    ctx.globalAlpha = alpha;
   }
 
   // 機首を +x に向けた飛行機の形。p を渡すとプロペラも回す
@@ -970,13 +1058,13 @@
   function drawIncoming(s) {
     const x = clamp(s.x, 22, W - 22), y = clamp(s.y, 22, H - 22);
     const T = TYPES[s.type];
-    const blink = Math.sin(clock * 10) > 0 ? 1 : 0.4;
+    const blink = Math.sin(clock * (s.mayday ? 18 : 10)) > 0 ? 1 : 0.4;
     ctx.save();
     ctx.globalAlpha = blink;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = T.color; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = s.mayday ? MAYDAY_COLOR : T.color; ctx.lineWidth = s.mayday ? 4 : 3;
+    ctx.beginPath(); ctx.arc(x, y, s.mayday ? 19 : 16, 0, Math.PI * 2); ctx.stroke();
     ctx.translate(x, y);
     ctx.rotate(s.dir);
     ctx.fillStyle = T.color;
