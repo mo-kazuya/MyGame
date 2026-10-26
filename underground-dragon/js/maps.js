@@ -3,6 +3,7 @@
   マップ記号
     #  レンガ（固い）        =  石ブロック（固い）     -  板（上に乗れる・↓ですり抜け）
     H  はしご                .  背景の壁（町では建物）  ,  洞窟の暗がり（背景）
+    _  石の足場（上に乗れる・下からすり抜けられる・↓で飛び降りる）
     t  木（飾り）            ^  トゲ                    +  鍵のかかった扉
     a-h 他エリアへの扉       K W A F S I T  王城（訓練所）・武器・防具・道具・魔法・宿屋・寺院
     $ 金  ! 薬  * 魔法の水  ? 鍵  % 食料  & ドラゴンスレイヤー
@@ -31,54 +32,87 @@ function makeTown() {
   return g.map(r => r.join(''));
 }
 
-// 階層型ダンジョンのビルダー。段 l の通路は行 3l+1, 3l+2、床は行 3l+3。
+// 階層型ダンジョンのビルダー。段 l の通路は行 5l+1〜5l+4（高さ4マス）、床は行 5l+5。
+// 天井が高いので、ジャンプで敵を跳び越したり、足場に乗ってやり過ごしたりできる。
+const DUNGEON_STRIDE = 5;
 function makeDungeon(W, levels, build) {
-  const H = 3 * levels + 1;
+  const S = DUNGEON_STRIDE, H = S * levels + 1;
   const g = [];
   for (let y = 0; y < H; y++) {
     const row = [];
-    for (let x = 0; x < W; x++) row.push(y % 3 === 0 || x === 0 || x === W - 1 ? '#' : '.');
+    for (let x = 0; x < W; x++) row.push(y % S === 0 || x === 0 || x === W - 1 ? '#' : '.');
     g.push(row);
   }
+  const floor = l => S * l + S;      // 段 l の床
+  const ground = l => S * l + S - 1; // 段 l で立つ行
   const api = {
     // 段 l と段 l+1 をつなぐはしご
-    lad(l, c) { for (let y = 3 * l + 3; y <= 3 * l + 5; y++) g[y][c] = 'H'; },
-    at(l, c, ch) { g[3 * l + 2][c] = ch; },
-    wall(l, c) { g[3 * l + 1][c] = '#'; g[3 * l + 2][c] = '#'; },
-    lock(l, c) { g[3 * l + 1][c] = '+'; g[3 * l + 2][c] = '+'; },
+    lad(l, c) { for (let y = floor(l); y <= ground(l + 1); y++) g[y][c] = 'H'; },
+    at(l, c, ch) { g[ground(l)][c] = ch; },
+    wall(l, c) { for (let y = S * l + 1; y <= ground(l); y++) g[y][c] = '#'; },
+    lock(l, c) { for (let y = S * l + 1; y <= ground(l); y++) g[y][c] = '+'; },
     // 段 l の床に穴をあける（下の段に落ちる）
-    pit(l, c0, c1) { for (let c = c0; c <= c1; c++) g[3 * l + 3][c] = '.'; },
-    spikes(l, c0, c1) { for (let c = c0; c <= c1; c++) g[3 * l + 2][c] = '^'; },
-    block(l, c0, c1) { for (let c = c0; c <= c1; c++) g[3 * l + 2][c] = '='; },
+    pit(l, c0, c1) { for (let c = c0; c <= c1; c++) g[floor(l)][c] = '.'; },
+    spikes(l, c0, c1) { for (let c = c0; c <= c1; c++) g[ground(l)][c] = '^'; },
+    block(l, c0, c1) { for (let c = c0; c <= c1; c++) g[ground(l)][c] = '='; },
+    // 床から2マス上の足場。下を敵がくぐれるので、乗ってやり過ごしたり、背後に飛び降りたりできる
+    step(l, c0, c1) { for (let c = c0; c <= c1; c++) g[ground(l) - 1][c] = '_'; },
   };
   build(api);
   return g.map(r => r.join(''));
 }
 
+// 旧レイアウト（通路の高さ2マス・段の間隔3行）の行番号を今の行番号に直す。古いセーブの読み込み用
+function migrateDungeonRow(y) {
+  if (y <= 0) return y;
+  const l = Math.floor((y - 1) / 3), k = y - 3 * l; // k = 1:通路の上, 2:通路の下, 3:床
+  return DUNGEON_STRIDE * l + k + 2;
+}
+
 const D1 = makeDungeon(44, 5, m => {
   m.at(0, 2, 'a'); m.at(0, 12, '1'); m.at(0, 22, '1'); m.at(0, 30, '$'); m.lad(0, 40); m.wall(0, 41); m.at(0, 42, '!');
+  m.step(0, 15, 17); m.step(0, 25, 27);
   m.at(1, 30, '2'); m.at(1, 18, '1'); m.at(1, 4, '!'); m.at(1, 10, 'm'); m.pit(1, 24, 25); m.lad(1, 3);
+  m.step(1, 14, 16); m.step(1, 20, 22);
+  m.at(1, 34, 'W'); m.at(1, 36, 'A'); m.at(1, 38, 'F'); // 地下の店
   m.at(2, 10, '2'); m.at(2, 20, '3'); m.block(2, 28, 28); m.at(2, 38, 'e'); m.lad(2, 41);
+  m.step(2, 16, 18); m.step(2, 23, 25); m.step(2, 30, 32);
   m.at(3, 30, '3'); m.at(3, 15, '1'); m.at(3, 8, '%'); m.lad(3, 4); m.wall(3, 2); m.at(3, 1, '$');
+  m.step(3, 11, 13); m.step(3, 26, 28); m.step(3, 34, 36);
   m.at(4, 12, '3'); m.at(4, 20, '$'); m.lock(4, 30); m.at(4, 36, '2'); m.at(4, 41, 'b');
+  m.step(4, 8, 10); m.step(4, 15, 17);
 });
 
 const D2 = makeDungeon(52, 6, m => {
   m.at(0, 2, 'b'); m.at(0, 10, '3'); m.at(0, 20, '2'); m.at(0, 28, '4'); m.spikes(0, 34, 34); m.at(0, 44, '$'); m.lad(0, 48);
+  m.step(0, 6, 8); m.step(0, 24, 26); m.step(0, 33, 35);
   m.at(1, 40, '7'); m.at(1, 30, '3'); m.at(1, 20, '2'); m.at(1, 8, '!'); m.pit(1, 15, 16); m.lad(1, 2); m.wall(1, 49); m.at(1, 50, 'R');
+  m.step(1, 26, 28); m.step(1, 35, 37);
   m.at(2, 10, '4'); m.spikes(2, 25, 26); m.at(2, 32, '6'); m.at(2, 45, 'e'); m.lad(2, 49);
-  m.at(3, 40, '4'); m.at(3, 30, 'F'); m.at(3, 20, '2'); m.at(3, 12, '3'); m.lad(3, 3);
+  m.step(2, 6, 8); m.step(2, 24, 27); m.step(2, 36, 38);
+  m.at(3, 40, '4'); m.at(3, 20, '2'); m.at(3, 12, '3'); m.lad(3, 3);
+  m.at(3, 26, 'W'); m.at(3, 28, 'A'); m.at(3, 30, 'F'); m.at(3, 32, 'T'); // 地下の店
+  m.step(3, 15, 17); m.step(3, 43, 45);
   m.at(4, 10, '6'); m.at(4, 20, '7'); m.at(4, 30, '4'); m.block(4, 37, 37); m.at(4, 40, 'G'); m.at(4, 44, '%'); m.lad(4, 48);
+  m.step(4, 13, 15); m.step(4, 26, 28); m.step(4, 33, 35);
   m.at(5, 40, '4'); m.at(5, 30, '6'); m.at(5, 25, '$'); m.lock(5, 8); m.at(5, 4, 'c'); m.wall(5, 49); m.at(5, 50, '$');
+  m.step(5, 20, 22); m.step(5, 36, 38);
 });
 
 const D3 = makeDungeon(56, 6, m => {
   m.at(0, 2, 'c'); m.at(0, 12, '4'); m.at(0, 22, '5'); m.spikes(0, 30, 31); m.at(0, 40, '6'); m.at(0, 48, '!'); m.lad(0, 52); m.wall(0, 53); m.at(0, 54, 'G');
+  m.step(0, 8, 10); m.step(0, 18, 20); m.step(0, 29, 32); m.step(0, 36, 38);
   m.at(1, 45, '5'); m.at(1, 35, '7'); m.at(1, 25, '6'); m.pit(1, 18, 19); m.at(1, 8, '$'); m.lad(1, 3);
-  m.at(2, 12, '5'); m.at(2, 20, '2'); m.at(2, 28, '2'); m.at(2, 36, '4'); m.at(2, 46, 'e'); m.lad(2, 53);
+  m.step(1, 11, 13); m.step(1, 28, 30); m.step(1, 41, 43);
+  m.at(2, 15, '5'); m.at(2, 20, '2'); m.at(2, 28, '2'); m.at(2, 36, '4'); m.at(2, 46, 'e'); m.lad(2, 53);
+  m.at(2, 5, 'W'); m.at(2, 7, 'A'); m.at(2, 9, 'F'); m.at(2, 49, 'T'); // 地下の店
+  m.step(2, 24, 26); m.step(2, 32, 34); m.step(2, 40, 42);
   m.at(3, 44, '6'); m.at(3, 34, '5'); m.lock(3, 20); m.at(3, 12, '&'); m.at(3, 8, '!'); m.lad(3, 30);
+  m.step(3, 24, 26); m.step(3, 38, 40);
   m.at(4, 40, '5'); m.at(4, 20, '6'); m.at(4, 10, '4'); m.at(4, 48, '*'); m.block(4, 26, 26); m.lad(4, 4); m.wall(4, 2); m.at(4, 1, '$');
+  m.step(4, 14, 16); m.step(4, 34, 36); m.step(4, 44, 46);
   m.at(5, 20, '5'); m.at(5, 30, '5'); m.at(5, 38, '%'); m.spikes(5, 44, 44); m.at(5, 48, 'Q'); m.at(5, 52, 'd');
+  m.step(5, 24, 26); m.step(5, 43, 45);
 });
 
 const LAIR = [
@@ -147,11 +181,11 @@ const ROOM3 = [
 const AREAS = {
   town: { name: 'ふもとの町',      theme: 'town', bg: ' ', map: makeTown(), links: { a: ['d1', 'a'] }, safe: true, noDig: true },
   d1:   { name: '地下迷宮 第1層',  theme: 'cave', bg: '.', map: D1, links: { a: ['town', 'a'], b: ['d2', 'b'], e: ['r1', 'e'] },
-          intro: '湿った空気が肌にまとわりつく…' },
+          intro: '湿った空気が肌にまとわりつく…。地下にも店があるらしい。' },
   r1:   { name: '守護者の間（第1層）', theme: 'room', view: 'top', bg: '.', map: ROOM1, links: { e: ['d1', 'e'] }, noDig: true,
           intro: '部屋の奥に巨大な影がうごめいている…！' },
   d2:   { name: '地下迷宮 第2層',  theme: 'ice',  bg: '.', map: D2, links: { b: ['d1', 'b'], c: ['d3', 'c'], e: ['r2', 'e'] },
-          intro: '冷たい石壁。どこかに地下の商人がいるらしい。' },
+          intro: '冷たい石壁。この階にも地下の店があるらしい。' },
   r2:   { name: '守護者の間（第2層）', theme: 'room', view: 'top', bg: '.', map: ROOM2, links: { e: ['d2', 'e'] }, noDig: true,
           intro: '荒い鼻息が聞こえる…！' },
   d3:   { name: '地下迷宮 第3層',  theme: 'deep', bg: '.', map: D3, links: { c: ['d2', 'c'], d: ['lair', 'd'], e: ['r3', 'e'] }, dark: true,
