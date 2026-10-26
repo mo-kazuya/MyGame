@@ -37,7 +37,11 @@
   let state = 'title'; // title / play / pause / crash / over
   let landed = 0, elapsed = 0, spawnTimer = 0, crashT = 0, clearT = 0, beepT = 0, clock = 0;
   let stageNo = 0, unlocked = 0; // stageNo は STAGES の添字（STAGES.length はハイスコアモード）。unlocked は遊べる最後のステージの添字
-  let endlessOpen = loadFlag('airportline.endless'), best = loadNum('airportline.best'), newRecord = false;
+  // ハイスコアモードの滑走路の数（1〜3本）と、本数ごとのベスト。3本の記録は最初の版と同じ保存キー
+  const BEST_KEY = { 1: 'airportline.best1', 2: 'airportline.best2', 3: 'airportline.best' };
+  let endlessOpen = loadFlag('airportline.endless'), newRecord = false;
+  let endlessRw = Math.min(3, loadNum('airportline.endlessRw') || 3);
+  const bests = { 1: loadNum(BEST_KEY[1]), 2: loadNum(BEST_KEY[2]), 3: loadNum(BEST_KEY[3]) };
   let toast = null;
   let gameSpeed = loadSpeed();
   const drags = new Map(); // 指（touch の identifier、マウスは 'mouse'）→ 線を描いている飛行機
@@ -127,16 +131,18 @@
     { goal: 15, prop: 0.5,  runways: ['L1'],             max: 5, interval: 4.2, note: '滑走路はついに1本！ 全部の飛行機が同じ滑走路へ' },
     { goal: 20, prop: 0.5,  runways: ['L1'],             max: 6, interval: 3.6, note: '最終ステージ。順番をよく考えて着陸させよう' },
   ];
-  // ハイスコアモード：ステージ8のあと。全部の滑走路を使い、ぶつかるまで続く。
+  // ハイスコアモード：ステージ8のあと。滑走路の数を選び、ぶつかるまで続く。
   // 着陸させるほど同時に飛ぶ機数が増え、出てくる間隔が短くなる
   const ENDLESS = STAGES.length;
+  const ENDLESS_RUNWAYS = { 1: ['L1'], 2: ['L1', 'S1'], 3: ['L1', 'L2', 'S1'] };
   const endlessStage = () => ({
-    goal: Infinity, prop: 0.5, runways: ['L1', 'L2', 'S1'],
+    goal: Infinity, prop: 0.5, runways: ENDLESS_RUNWAYS[endlessRw],
     max: Math.min(9, 4 + Math.floor(landed / 10)),
     interval: Math.max(2.2, 4.4 - landed * 0.03),
     note: 'ぶつかるまで終わらない！ 着陸させるほど飛行機が増えていく。どこまで記録を伸ばせるか挑戦しよう',
   });
   const isEndless = () => stageNo === ENDLESS;
+  const best = () => bests[endlessRw];
   unlocked = loadUnlocked();
   const stage = () => isEndless() ? endlessStage() : STAGES[stageNo];
   const hasProps = () => stage().prop > 0;
@@ -352,11 +358,11 @@
     texts.push({ x: p.x, y: p.y - 20, text: '+1', color: p.T.color, t: 1.2 });
     if (landed >= stage().goal) stageClear();
     else sfx.land();
-    if (isEndless() && landed > best) {
-      if (!newRecord && best > 0) showToast('ベスト更新！');
+    if (isEndless() && landed > best()) {
+      if (!newRecord && best() > 0) showToast('ベスト更新！');
       newRecord = true;
-      best = landed;
-      save('airportline.best', best);
+      bests[endlessRw] = landed;
+      save(BEST_KEY[endlessRw], landed);
     }
   }
 
@@ -603,7 +609,7 @@
       <button id="go">${unlocked > 0 ? `つづきから（ステージ ${unlocked + 1}）` : 'はじめる'}</button>
       <div class="stages">ステージを選ぶ<div>${stageButtons}</div></div>
       <p class="best">${endlessOpen
-        ? `∞ ハイスコアモード　ベスト <span class="score">${best}</span> 機`
+        ? `∞ ハイスコアモードのベスト<br>${[1, 2, 3].map(n => `滑走路${n}本 <span class="score">${bests[n]}</span>`).join('　')}`
         : '∞ ハイスコアモードはステージ8をクリアすると遊べます'}</p>
       ${speedRow()}
       <p><a href="../index.html">← ゲーム一覧へ</a></p>`);
@@ -614,20 +620,18 @@
   }
 
   function stageInfo(n) {
-    if (n === ENDLESS) {
-      return `
-      <p class="goal">ベスト：<span class="score">${best}</span> 機</p>
-      <p>飛行機：<span class="jet">旅客機</span>・<span class="prop">プロペラ機</span><br>滑走路：<span class="jet">長い 2 本</span>・<span class="prop">短い 1 本</span></p>
-      <p class="note">${endlessStage().note}</p>`;
-    }
-    const st = STAGES[n];
+    const st = n === ENDLESS ? endlessStage() : STAGES[n];
     const kinds = st.prop > 0
       ? `<span class="jet">旅客機</span>・<span class="prop">プロペラ機</span>`
       : `<span class="jet">旅客機</span>のみ`;
     const longs = st.runways.filter(id => RUNWAY_DEFS[id].kind === 'long').length;
     const shorts = st.runways.length - longs;
-    return `
-      <p class="goal">目標：<span class="score">${st.goal}</span> 機 着陸</p>
+    const runwayRow = n !== ENDLESS ? '' : `<div class="stages">滑走路の数<div>${[1, 2, 3].map(k =>
+      `<button class="st rw${k === endlessRw ? ' on' : ''}" data-rw="${k}">${k}本<small>ベスト ${bests[k]}</small></button>`).join('')}</div></div>`;
+    return `${runwayRow}
+      <p class="goal">${n === ENDLESS
+        ? `ベスト：<span class="score">${best()}</span> 機`
+        : `目標：<span class="score">${st.goal}</span> 機 着陸`}</p>
       <p>飛行機：${kinds}<br>滑走路：<span class="jet">長い ${longs} 本</span>${shorts ? `・<span class="prop">短い ${shorts} 本</span>` : ''}</p>
       <p class="note">${st.note}</p>`;
   }
@@ -642,6 +646,13 @@
       <button id="title" class="sub">タイトルへ</button>
       ${speedRow()}`);
     bindButtons({ start: startStage, title: showTitle });
+    overlay.querySelectorAll('[data-rw]').forEach(b => {
+      b.addEventListener('click', () => {
+        endlessRw = +b.dataset.rw;
+        save('airportline.endlessRw', endlessRw);
+        showStageIntro(ENDLESS); // 後ろの滑走路も並べ直す
+      });
+    });
   }
 
   function stageName(n) { return n === ENDLESS ? 'ハイスコアモード' : `ステージ ${n + 1}`; }
@@ -676,7 +687,7 @@
     showOverlay(`
       <h1>ポーズ</h1>
       <p>${isEndless()
-        ? `ハイスコアモード　着陸：<span class="score">${landed}</span> 機（ベスト ${best}）`
+        ? `ハイスコアモード（滑走路${endlessRw}本）　着陸：<span class="score">${landed}</span> 機（ベスト ${best()}）`
         : `ステージ ${stageNo + 1}　着陸：<span class="score">${landed}</span> / ${stage().goal} 機`}</p>
       <button id="resume">つづける</button><br>
       <button id="restart" class="sub">やり直す</button>
@@ -694,9 +705,9 @@
     if (isEndless()) {
       showOverlay(`
         <h2>衝突！</h2>
-        <p>ハイスコアモード　着陸させた飛行機</p>
+        <p>ハイスコアモード（滑走路${endlessRw}本）　着陸させた飛行機</p>
         <p class="score">${landed} 機</p>
-        <p>${newRecord ? '<b class="record">ベスト更新！</b>' : `ベスト ${best} 機`}</p>
+        <p>${newRecord ? '<b class="record">ベスト更新！</b>' : `ベスト ${best()} 機`}</p>
         <button id="again">もう一度</button><br>
         <button id="title" class="sub">タイトルへ</button>
         ${speedRow()}`);
@@ -987,10 +998,10 @@
       const endless = isEndless();
       line(endless ? `着陸 ${landed}` : `着陸 ${landed} / ${stage().goal}`, left, top, '#ffffff');
       ctx.font = '14px DotGothic16, monospace';
-      line(endless ? `ベスト ${best}` : `ステージ ${stageNo + 1}`, left, top + 26, newRecord ? '#7dff9a' : '#ffd84a');
+      line(endless ? `ベスト ${best()}（${endlessRw}本）` : `ステージ ${stageNo + 1}`, left, top + 26, newRecord ? '#7dff9a' : '#ffd84a');
       // 目標（ハイスコアモードではベスト）までの進み具合
       const bw = HUD_W - 14, bx = left, by = top + 46;
-      const goal = endless ? best : stage().goal;
+      const goal = endless ? best() : stage().goal;
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(bx, by, bw, 6);
       ctx.fillStyle = newRecord ? '#7dff9a' : '#ffd84a';
       ctx.fillRect(bx, by, bw * (goal > 0 ? Math.min(1, landed / goal) : 0), 6);
