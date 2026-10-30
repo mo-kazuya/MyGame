@@ -78,3 +78,5 @@ html, body {
   background: #22304a; border-color: #607090;
 }
 .panel button.sp.on { background: #ffd84a; border-color: #fff4c0; color: #10203a; }
+.panel .optnote { display: block; margin-top: 6px; font-size: 12px; line-height: 1.5; color: #a8b8d0; }
+.panel .mayday { color: #ff6a60; font-weight: normal; }
