@@ -28,4 +28,12 @@ const GAMES = [
     tags: ['PC', 'スマホ', 'ステージ制'],
     thumb: 'thumb.png',
   },
+  {
+    dir: 'tank-defense',
+    title: '鉄壁の砲台',
+    genre: 'タワーディフェンス',
+    desc: '道を進んでくる戦車の群れを、砲台を建てて食い止めろ。機関砲・大砲・電磁波・ミサイルを組み合わせ、強化して基地を守り抜こう。',
+    tags: ['PC', 'スマホ', 'ステージ制'],
+    thumb: 'thumb.png',
+  },
 ];

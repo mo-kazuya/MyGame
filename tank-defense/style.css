@@ -1,0 +1,140 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: #16200f;
+  color: #f0f0e8;
+  font-family: 'DotGothic16', 'MS Gothic', monospace;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+/* 上の帯（資金・基地・ウェーブとボタン）／戦場／下の帯（砲台の一覧と出撃ボタン） */
+body {
+  display: grid; height: 100vh; height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "field" "tray";
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+button { font: inherit; color: #fff; cursor: pointer; touch-action: manipulation; }
+
+#top {
+  grid-area: top;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; background: #22301a; border-bottom: 2px solid #000;
+}
+#top button {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; padding: 0;
+  border: 2px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.35); font-size: 17px;
+}
+#top #speed { width: auto; min-width: 40px; padding: 0 8px; border-radius: 20px; font-size: 15px; }
+#top button.off { opacity: 0.45; text-decoration: line-through; }
+.stat { display: flex; flex-direction: column; line-height: 1.15; min-width: 48px; }
+.stat .lbl { font-size: 11px; color: #b8c4a0; }
+.stat b { font-weight: normal; font-size: 19px; white-space: nowrap; }
+#money { color: #ffd84a; }
+#lives { color: #ff9a8a; }
+.grow { flex: 1; }
+
+#field { grid-area: field; position: relative; }
+#screen { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#tray {
+  grid-area: tray;
+  display: flex; gap: 6px; height: 82px;
+  padding: 6px 8px; background: #22301a; border-top: 2px solid #000;
+}
+#tools { flex: 1; display: flex; gap: 6px; min-width: 0; justify-content: center; }
+#tray button {
+  border: 2px solid #6a7a5a; border-radius: 6px; background: #30402a; padding: 2px;
+}
+.card {
+  flex: 1 1 0; min-width: 0; max-width: 120px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+}
+.card canvas { width: 34px; height: 34px; }
+.card .tx { display: flex; flex-direction: column; align-items: center; }
+.card .nm { font-size: 12px; white-space: nowrap; }
+.card .cost { font-size: 13px; color: #ffd84a; }
+#tray .card.on { border-color: #ffd84a; background: #5a6a2a; }
+#tray .card.poor { opacity: 0.55; }
+.card.poor .cost { color: #ff8a7a; }
+#tray .card.pick { animation: pick 0.8s ease-in-out infinite alternate; }
+@keyframes pick { from { border-color: #6a7a5a; } to { border-color: #ffd84a; } }
+
+.info { flex: 2.4 1 0; min-width: 0; max-width: 260px; display: flex; align-items: center; gap: 6px; }
+.info canvas { flex: none; width: 40px; height: 40px; }
+.info b { display: block; font-weight: normal; font-size: 15px; color: #ffd84a; white-space: nowrap; }
+.info small { display: block; font-size: 11px; color: #c8d4b0; line-height: 1.35; }
+.act { flex: 1 1 0; min-width: 0; max-width: 100px; font-size: 13px; line-height: 1.3; }
+.act .key { display: none; }
+@media (hover: hover) { .act .key { display: inline; } } /* キーの案内はマウスのある画面だけ */
+#tray .act.up { background: #2a5aa0; border-color: #a8c8ff; }
+#tray .act.sell { background: #6a4a20; border-color: #e0b070; }
+#tray .act:disabled { opacity: 0.45; cursor: default; }
+#tray .act.close { flex: 0 0 40px; }
+@media (max-width: 480px) { #tray .act.close { display: none; } } /* 狭い画面では、戦場のどこかをタップして閉じる */
+
+#tray #next {
+  flex: none; width: 84px; font-size: 15px; line-height: 1.3;
+  background: #b0402a; border-color: #ffcf9a;
+}
+#tray #next small { display: block; font-size: 11px; color: #ffe0c8; }
+#tray #next:disabled { background: #3a3a34; border-color: #6a6a60; cursor: default; }
+#tray #next:disabled small { color: #b0b0a0; }
+
+/* 横持ちのスマホ（背が低い画面）では、砲台の一覧を右に縦に並べて戦場を広くする */
+@media (orientation: landscape) and (max-height: 520px) {
+  body {
+    grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "top top" "field tray";
+  }
+  #top { padding: 3px 10px; }
+  #top button { width: 36px; height: 36px; }
+  #tray { flex-direction: column; width: 112px; height: auto; border-top: none; border-left: 2px solid #000; overflow: auto; }
+  #tools { flex-direction: column; justify-content: flex-start; }
+  .card { flex-direction: row; max-width: none; gap: 6px; }
+  .card canvas { flex: none; width: 28px; height: 28px; }
+  .info { flex: none; max-width: none; }
+  .info canvas { display: none; }
+  .act { flex: none; max-width: none; padding: 4px 2px; }
+  #tray .act.close { flex: none; }
+  #tray #next { width: auto; height: 54px; }
+}
+
+#overlay {
+  position: fixed; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  touch-action: manipulation;
+}
+#overlay.hidden { display: none; }
+.panel {
+  width: 100%; max-width: 480px; max-height: 100%; overflow: auto;
+  background: #26341c; border: 3px double #e8f0d8; border-radius: 6px;
+  padding: 18px 20px; box-shadow: 0 0 0 3px #000;
+  text-align: center;
+}
+.panel h1 { margin: 0 0 4px; font-size: 30px; font-weight: normal; color: #ffd84a; letter-spacing: 0.08em; text-shadow: 3px 3px 0 #6a2a1a; }
+.panel h2 { margin: 0 0 8px; font-size: 24px; font-weight: normal; color: #ffd84a; }
+.panel h2.bad { color: #ff7a6a; }
+.panel p { margin: 8px 0; font-size: 15px; line-height: 1.6; }
+.panel .rules { text-align: left; font-size: 14px; line-height: 1.7; margin: 10px 0 12px; padding-left: 1.2em; }
+.panel .note { color: #ffe9a0; font-size: 14px; }
+.panel .stars { font-size: 30px; color: #ffd84a; letter-spacing: 0.15em; }
+.panel .stars i { font-style: normal; color: #4a5440; }
+.panel button {
+  margin: 6px; min-width: 140px; padding: 10px 18px; font-size: 18px;
+  background: #b0402a; border: 2px solid #ffcf9a; border-radius: 6px;
+}
+.panel button.sub { background: #3a4a30; border-color: #90a080; font-size: 15px; }
+.panel a { color: #b8e08a; font-size: 13px; }
+.panel .stages { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 6px; }
+.panel .stages button {
+  margin: 0; min-width: 0; padding: 8px 6px; font-size: 15px; line-height: 1.35;
+  background: #3a4a30; border-color: #90a080;
+}
+.panel .stages button small { display: block; font-size: 12px; color: #c8d4b0; }
+.panel .stages button .st { color: #ffd84a; font-size: 13px; }
+.panel .stages button:disabled { opacity: 0.4; cursor: default; }
+.panel .legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: 13px; color: #c8d4b0; margin: 4px 0 10px; }
