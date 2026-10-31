@@ -107,7 +107,8 @@
   // ---------- ステージ ----------
   // paths は戦車の通り道（マスの [列, 行] を角ごとに並べる。最初の点は画面の外、最後の点が基地）。
   // 道が 2 本あるステージでは、戦車が交互に分かれて出てくる。
-  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率
+  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率。
+  // ground は地面の色（書かなければ草原、'sand' は砂漠、'snow' は雪原）
   const STAGES = [
     {
       name: '草原の一本道', waves: 8, hp: 1.0, money: 220, lives: 20,
@@ -138,6 +139,22 @@
       ],
       rocks: [[0, 0], [15, 9], [7, 5], [15, 0]], water: [[5, 4], [5, 5]],
       note: '基地は真ん中。上と下から押し寄せる戦車の大軍を、15 ウェーブ守り切れ',
+    },
+    {
+      name: '砂漠の三叉路', waves: 15, hp: 2.2, money: 340, lives: 20, ground: 'sand',
+      paths: [
+        [[-1, 1], [4, 1], [4, 3], [10, 3], [10, 5], [15, 5]],
+        [[-1, 6], [3, 6], [3, 8], [8, 8], [8, 5], [15, 5]],
+        [[13, 10], [13, 7], [11, 7], [11, 5], [15, 5]],
+      ],
+      rocks: [[1, 3], [7, 1], [14, 8], [6, 6]], water: [[0, 9], [1, 9], [1, 8]],
+      note: '3 本の道。下から来る道はとても短い。地雷と空爆で抜け道をふさごう',
+    },
+    {
+      name: '雪原の大回廊', waves: 18, hp: 3.3, money: 320, lives: 20, ground: 'snow',
+      paths: [[[-1, 0], [14, 0], [14, 9], [1, 9], [1, 2], [12, 2], [12, 7], [3, 7], [3, 4], [9, 4]]],
+      rocks: [[0, 5], [7, 5], [15, 4]], water: [[5, 5], [6, 5], [5, 6]],
+      note: 'うず巻きの長い道を、とても硬い戦車がやって来る。型の組み合わせで 18 ウェーブ耐え抜け',
     },
   ];
 
@@ -357,20 +374,26 @@
     const g = bg.getContext('2d');
     g.scale(bgScale, bgScale);
     let seed = 11 + stageNo * 7;
+    // 地面の色：[r, g, b]・草の濃い色と薄い色・花を咲かせるか
+    const G = {
+      grass: { rgb: [74, 116, 54], dark: 'rgba(40,80,30,0.5)', light: 'rgba(150,190,100,0.45)', flowers: true },
+      sand: { rgb: [186, 156, 96], dark: 'rgba(120,90,50,0.45)', light: 'rgba(230,205,150,0.5)', flowers: false },
+      snow: { rgb: [196, 206, 214], dark: 'rgba(130,150,170,0.45)', light: 'rgba(255,255,255,0.7)', flowers: false },
+    }[STAGES[stageNo].ground || 'grass'];
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     // 草地。マスごとに少し色を変え、建てられる場所がわかるようにうっすら枠を付ける
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const v = ((c + r) % 2 ? 0 : 6) + rnd() * 6;
-      g.fillStyle = `rgb(${74 + v},${116 + v},${54 + v * 0.5})`;
+      g.fillStyle = `rgb(${G.rgb[0] + v},${G.rgb[1] + v},${G.rgb[2] + v * 0.5})`;
       g.fillRect(c * TILE, r * TILE, TILE, TILE);
     }
     for (let i = 0; i < 260; i++) {
       const x = rnd() * W, y = rnd() * H;
-      g.strokeStyle = rnd() < 0.5 ? 'rgba(40,80,30,0.5)' : 'rgba(150,190,100,0.45)';
+      g.strokeStyle = rnd() < 0.5 ? G.dark : G.light;
       g.lineWidth = 1.2;
       g.beginPath(); g.moveTo(x, y); g.lineTo(x - 2, y - 5); g.moveTo(x + 2, y); g.lineTo(x + 3, y - 4); g.stroke();
     }
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < (G.flowers ? 18 : 0); i++) {
       g.fillStyle = ['#f0e070', '#ffffff', '#f0a0c0'][i % 3];
       g.beginPath(); g.arc(rnd() * W, rnd() * H, 1.6, 0, Math.PI * 2); g.fill();
     }
