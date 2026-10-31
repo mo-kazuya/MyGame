@@ -20,6 +20,7 @@
   const moneyEl = document.getElementById('money');
   const livesEl = document.getElementById('lives');
   const waveEl = document.getElementById('wave');
+  const skillsEl = document.getElementById('skills');
 
   const TILE = 40, COLS = 16, ROWS = 10;
   const W = COLS * TILE, H = ROWS * TILE;
@@ -27,31 +28,72 @@
   const SELL_RATE = 0.7;      // 売ったときに戻ってくる割合
 
   // ---------- 砲台 ----------
-  // 値はレベル（0〜2）ごと。cost[0] は建てる値段、cost[1]・cost[2] はそのレベルへの強化の値段。
-  // range は射程（マス）、rate は撃つ間隔（秒）、dmg は 1 発の威力
+  // 値はレベル（0・1）ごと。cost[0] は建てる値段、cost[1] は Lv2 への強化の値段。
+  // range は射程（マス）、rate は撃つ間隔（秒）、dmg は 1 発の威力。
+  // Lv3 への強化では br の a・b のどちらかの「型」を選ぶ（書いてない値は Lv2 のまま）。型だけが持つ値：
+  //   ap 装甲を無視する割合／fire 着弾点が燃える強さ（毎秒）／minRange これより近くは撃てない／
+  //   stun 止める秒数（stunEvery 秒ごと）／weak 下げる装甲／count 一度に撃つミサイルの数／heavy 体力が多いほど強い
   const TURRETS = {
     mg: {
-      name: '機関砲', color: '#7dd36a', cost: [50, 45, 80],
-      range: [2.3, 2.5, 2.8], rate: [0.22, 0.18, 0.14], dmg: [7, 11, 17],
+      name: '機関砲', color: '#7dd36a', cost: [50, 45],
+      range: [2.3, 2.5], rate: [0.22, 0.18], dmg: [7, 11],
       desc: '連射が速い。装甲の厚い戦車は苦手',
+      br: {
+        a: { name: '徹甲弾', cost: 90, dmg: 17, rate: 0.14, range: 2.8, ap: 0.75, desc: '装甲の 3/4 を無視する。重戦車にも効く' },
+        b: { name: '二連装', cost: 90, dmg: 12, rate: 0.07, range: 2.4, desc: '倍の速さで撃つ。群れに強いが射程は短い' },
+      },
     },
     cannon: {
-      name: '大砲', color: '#ffb43c', cost: [100, 85, 150],
-      range: [2.6, 2.8, 3.1], rate: [1.5, 1.35, 1.2], dmg: [42, 75, 130], splash: [0.9, 1.0, 1.2],
+      name: '大砲', color: '#ffb43c', cost: [100, 85],
+      range: [2.6, 2.8], rate: [1.5, 1.35], dmg: [42, 75], splash: [0.9, 1.0],
       desc: '着弾したまわりをまとめて吹き飛ばす',
+      br: {
+        a: { name: '焼夷弾', cost: 160, dmg: 105, rate: 1.2, range: 3.1, splash: 1.2, fire: 22, desc: '着弾した所が 3 秒燃え、装甲を無視して焼く' },
+        b: { name: '長距離砲', cost: 170, dmg: 175, rate: 1.6, range: 4.6, splash: 1.0, minRange: 1.5, desc: 'とても遠くまで届くが、近すぎる戦車は撃てない' },
+      },
     },
     emp: {
-      name: '電磁波', color: '#6ad0ff', cost: [80, 70, 120],
-      range: [1.8, 2.1, 2.4], rate: [1.2, 1.1, 1.0], dmg: [4, 8, 14], slow: [0.35, 0.45, 0.55],
-      desc: 'まわりの戦車をまとめて遅くする。装甲を無視',
+      name: '電磁波', color: '#6ad0ff', cost: [80, 70],
+      range: [1.8, 2.1], rate: [1.2, 1.1], dmg: [4, 8], slow: [0.35, 0.45],
+      desc: 'まわりの戦車をまとめて遅くする。装甲を無視。遅くした戦車には大砲が 1.3 倍効く',
+      br: {
+        a: { name: '衝撃波', cost: 140, dmg: 14, rate: 1.0, range: 2.4, slow: 0.55, stun: 1.2, stunEvery: 6, desc: '6 秒ごとに、まわりの戦車を 1.2 秒止める' },
+        b: { name: '弱体化', cost: 130, dmg: 10, rate: 1.0, range: 2.6, slow: 0.45, weak: 5, desc: 'まわりの戦車の装甲を 5 下げる。機関砲と好相性' },
+      },
     },
     missile: {
-      name: 'ミサイル', color: '#ff6a6a', cost: [150, 120, 200],
-      range: [4.0, 4.5, 5.0], rate: [2.2, 2.0, 1.8], dmg: [95, 170, 290],
+      name: 'ミサイル', color: '#ff6a6a', cost: [150, 120],
+      range: [4.0, 4.5], rate: [2.2, 2.0], dmg: [95, 170],
       desc: '遠くまで届き、追いかけて当たる。重戦車に強い',
+      br: {
+        a: { name: '多弾頭', cost: 220, dmg: 120, rate: 1.9, range: 5.0, count: 3, desc: '3 発に分かれて、別々の戦車をねらう' },
+        b: { name: '対装甲', cost: 230, dmg: 250, rate: 1.9, range: 5.0, heavy: true, desc: '体力の多い戦車ほど大ダメージ（最大 2.5 倍）' },
+      },
     },
   };
   const TURRET_ORDER = ['mg', 'cannon', 'emp', 'missile'];
+  // 砲台の値（Lv3 で型を選んでいればその型の値）
+  function stat(t, k) {
+    const D = TURRETS[t.type];
+    if (t.lv === 2 && t.br && k in D.br[t.br]) return D.br[t.br][k];
+    const v = D[k];
+    return Array.isArray(v) ? v[Math.min(t.lv, v.length - 1)] : v;
+  }
+  const upCost = (t, br) => t.lv === 0 ? TURRETS[t.type].cost[1] : TURRETS[t.type].br[br || 'a'].cost;
+  // ねらい方（砲台をタップして切り替える）
+  const AIMS = [['first', '先頭'], ['last', '最後尾'], ['strong', '最強'], ['fast', '最速']];
+
+  // ---------- 支援（ウェーブ中だけ待ち時間が減る） ----------
+  const SKILLS = {
+    air:  { name: '空爆', key: 'Q', cd: 45, desc: '空爆：タップした場所に爆弾を落とす' },
+    mine: { name: '地雷', key: 'W', cd: 20, desc: '地雷：道をタップして置く。戦車が踏むと爆発' },
+    rush: { name: '一斉', key: 'E', cd: 60, desc: '一斉射撃：8 秒間、すべての砲台が倍の速さで撃つ' },
+  };
+  const SKILL_ORDER = ['air', 'mine', 'rush'];
+  const airDmg = n => 150 + 30 * n, mineDmg = n => 100 + 22 * n;
+  const RUSH_TIME = 8;
+  const INTEREST = 0.05, INTEREST_MAX = 30;            // ウェーブを守り切るたびの利息（手持ちの 5%、最大 $30）
+  const earlyBonus = (n, left) => Math.round(Math.min(left, 8) * (2 + n * 0.5)); // 早めに次を呼んだボーナス
 
   // ---------- 戦車 ----------
   // speed はマス／秒。armor は 1 発ごとに威力から引かれる（最低でも威力の 1/4 は通る）。dmg は基地に着いたときの被害
@@ -65,7 +107,8 @@
   // ---------- ステージ ----------
   // paths は戦車の通り道（マスの [列, 行] を角ごとに並べる。最初の点は画面の外、最後の点が基地）。
   // 道が 2 本あるステージでは、戦車が交互に分かれて出てくる。
-  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率
+  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率。
+  // ground は地面の色（書かなければ草原、'sand' は砂漠、'snow' は雪原）
   const STAGES = [
     {
       name: '草原の一本道', waves: 8, hp: 1.0, money: 220, lives: 20,
@@ -97,6 +140,22 @@
       rocks: [[0, 0], [15, 9], [7, 5], [15, 0]], water: [[5, 4], [5, 5]],
       note: '基地は真ん中。上と下から押し寄せる戦車の大軍を、15 ウェーブ守り切れ',
     },
+    {
+      name: '砂漠の三叉路', waves: 15, hp: 2.2, money: 340, lives: 20, ground: 'sand',
+      paths: [
+        [[-1, 1], [4, 1], [4, 3], [10, 3], [10, 5], [15, 5]],
+        [[-1, 6], [3, 6], [3, 8], [8, 8], [8, 5], [15, 5]],
+        [[13, 10], [13, 7], [11, 7], [11, 5], [15, 5]],
+      ],
+      rocks: [[1, 3], [7, 1], [14, 8], [6, 6]], water: [[0, 9], [1, 9], [1, 8]],
+      note: '3 本の道。下から来る道はとても短い。地雷と空爆で抜け道をふさごう',
+    },
+    {
+      name: '雪原の大回廊', waves: 18, hp: 3.3, money: 320, lives: 20, ground: 'snow',
+      paths: [[[-1, 0], [14, 0], [14, 9], [1, 9], [1, 2], [12, 2], [12, 7], [3, 7], [3, 4], [9, 4]]],
+      rocks: [[0, 5], [7, 5], [15, 4]], water: [[5, 5], [6, 5], [5, 6]],
+      note: 'うず巻きの長い道を、とても硬い戦車がやって来る。型の組み合わせで 18 ウェーブ耐え抜け',
+    },
   ];
 
   // ウェーブの中身。n は 1 から数えたウェーブの番号、total はそのステージのウェーブ数。
@@ -126,6 +185,9 @@
   let grid = [], paths = [], base = { c: 0, r: 0, x: 0, y: 0 }, bg = null, bgScale = 0;
   let turrets = [], enemies = [], shells = [], missiles = [];
   let tracers = [], rings = [], particles = [], decals = [], texts = [];
+  let fires = [], mines = [], strikes = [];   // 燃えている所・地雷・空爆
+  let skillCd = {}, skillMode = null, rushT = 0; // 支援の待ち時間・場所を選んでいる支援・一斉射撃の残り時間
+  let pendingBr = null;  // Lv3 の型を選ぶとき、1 回目のタップで説明を出し、2 回目で決める
   let money = 0, lives = 0, wave = 0, inWave = false, spawnQ = [], spawnT = 0;
   let sel = null;        // 選んでいるもの：{ c, r }（空き地）か { turret }
   let placeType = null;  // 下の一覧で選んだ砲台（この状態で空き地をタップすると建つ）
@@ -312,20 +374,26 @@
     const g = bg.getContext('2d');
     g.scale(bgScale, bgScale);
     let seed = 11 + stageNo * 7;
+    // 地面の色：[r, g, b]・草の濃い色と薄い色・花を咲かせるか
+    const G = {
+      grass: { rgb: [74, 116, 54], dark: 'rgba(40,80,30,0.5)', light: 'rgba(150,190,100,0.45)', flowers: true },
+      sand: { rgb: [186, 156, 96], dark: 'rgba(120,90,50,0.45)', light: 'rgba(230,205,150,0.5)', flowers: false },
+      snow: { rgb: [196, 206, 214], dark: 'rgba(130,150,170,0.45)', light: 'rgba(255,255,255,0.7)', flowers: false },
+    }[STAGES[stageNo].ground || 'grass'];
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     // 草地。マスごとに少し色を変え、建てられる場所がわかるようにうっすら枠を付ける
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       const v = ((c + r) % 2 ? 0 : 6) + rnd() * 6;
-      g.fillStyle = `rgb(${74 + v},${116 + v},${54 + v * 0.5})`;
+      g.fillStyle = `rgb(${G.rgb[0] + v},${G.rgb[1] + v},${G.rgb[2] + v * 0.5})`;
       g.fillRect(c * TILE, r * TILE, TILE, TILE);
     }
     for (let i = 0; i < 260; i++) {
       const x = rnd() * W, y = rnd() * H;
-      g.strokeStyle = rnd() < 0.5 ? 'rgba(40,80,30,0.5)' : 'rgba(150,190,100,0.45)';
+      g.strokeStyle = rnd() < 0.5 ? G.dark : G.light;
       g.lineWidth = 1.2;
       g.beginPath(); g.moveTo(x, y); g.lineTo(x - 2, y - 5); g.moveTo(x + 2, y); g.lineTo(x + 3, y - 4); g.stroke();
     }
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < (G.flowers ? 18 : 0); i++) {
       g.fillStyle = ['#f0e070', '#ffffff', '#f0a0c0'][i % 3];
       g.beginPath(); g.arc(rnd() * W, rnd() * H, 1.6, 0, Math.PI * 2); g.fill();
     }
@@ -418,6 +486,8 @@
     money = S.money; lives = S.lives; wave = 0; inWave = false; spawnQ = []; spawnT = 0;
     turrets = []; enemies = []; shells = []; missiles = [];
     tracers = []; rings = []; particles = []; decals = []; texts = [];
+    fires = []; mines = []; strikes = []; rushT = 0; skillMode = null; pendingBr = null;
+    skillCd = { air: 0, mine: 0, rush: 0 };
     sel = null; placeType = null; hover = null; shake = 0;
     buildMap();
     state = 'play';
@@ -426,8 +496,18 @@
     showToast('空き地をタップして砲台を建てよう', 3.5);
   }
 
+  // 次のウェーブを呼ぶ。前のウェーブの戦車が出そろっていれば、倒し切る前でも呼べる（早いほどボーナス）
+  const canCallNext = () => state === 'play' && wave < STAGES[stageNo].waves && (!inWave || !spawnQ.length);
   function startWave() {
-    if (state !== 'play' || inWave || wave >= STAGES[stageNo].waves) return;
+    if (!canCallNext()) return;
+    if (inWave) {
+      const left = enemies.filter(e => e.hp > 0).length;
+      const eb = earlyBonus(wave, left);
+      const msg = payWaveBonus();
+      money += eb;
+      addText(base.x, base.y - 20, `早期 +${eb}`, '#ffd84a');
+      showToast(`次を呼んだ！ 早期ボーナス +${eb}（${msg}）`, 2.4);
+    }
     wave++;
     inWave = true;
     const n = paths.length;
@@ -435,7 +515,15 @@
     spawnT = 0.3;
     sfx.wave();
     const last = wave === STAGES[stageNo].waves;
-    showToast(last ? `最終ウェーブ！${spawnQ.some(u => u.type === 'boss') ? ' 超重戦車が来る！' : ''}` : `ウェーブ ${wave}`, 2);
+    if (!toast || toast.t < 1.5) showToast(last ? `最終ウェーブ！${spawnQ.some(u => u.type === 'boss') ? ' 超重戦車が来る！' : ''}` : `ウェーブ ${wave}`, 2);
+  }
+  // ウェーブを守り切ったボーナスと利息を払う。トースト用の文を返す
+  function payWaveBonus() {
+    const b = waveBonus(wave);
+    const it = Math.min(INTEREST_MAX, Math.floor(money * INTEREST));
+    money += b + it;
+    sfx.bonus();
+    return `ボーナス +${b}・利息 +${it}`;
   }
 
   function spawnEnemy(u) {
@@ -445,7 +533,7 @@
     const e = {
       T, type: u.type, path: p, d: 0, hp, maxHp: hp,
       reward: Math.round(T.reward * rewardScale(wave)),
-      x: 0, y: 0, a: 0, slow: 0, slowT: 0, hit: 0, wob: rand(0, 6),
+      x: 0, y: 0, a: 0, slow: 0, slowT: 0, stunT: 0, weak: 0, weakT: 0, hit: 0, wob: rand(0, 6),
       off: u.type === 'boss' ? 0 : rand(-5, 5), // 道の真ん中から少し左右にずらして、重なって見えないように
     };
     const q = pathPos(p, 0);
@@ -458,7 +546,7 @@
     if (!buildable(c, r)) return false;
     if (money < D.cost[0]) { showToast('資金が足りません'); sfx.no(); return false; }
     money -= D.cost[0];
-    const t = { type, c, r, x: (c + 0.5) * TILE, y: (r + 0.5) * TILE, lv: 0, cd: 0, a: -Math.PI / 2, flash: 0, spent: D.cost[0], pop: 0.25 };
+    const t = { type, c, r, x: (c + 0.5) * TILE, y: (r + 0.5) * TILE, lv: 0, br: null, aim: 0, cd: 0, scd: 0, a: -Math.PI / 2, flash: 0, spent: D.cost[0], pop: 0.25 };
     // 最初は一番近い道のほうを向けておく
     let best = Infinity;
     for (const p of paths) for (const q of p.pts) {
@@ -470,14 +558,32 @@
     puff(t.x, t.y, '#d8d0b0', 10);
     return true;
   }
-  function upgrade(t) {
-    const D = TURRETS[t.type];
+  // 強化。Lv2 → Lv3 は型（br：'a' か 'b'）を選ぶ
+  function upgrade(t, br) {
     if (t.lv >= 2) return;
-    const cost = D.cost[t.lv + 1];
+    if (t.lv === 1 && !br) { showToast('Lv3 は 2 つの型から選ぶ（A / B）'); return; }
+    const cost = upCost(t, br);
     if (money < cost) { showToast('資金が足りません'); sfx.no(); return; }
     money -= cost; t.spent += cost; t.lv++; t.pop = 0.25;
+    if (t.lv === 2) { t.br = br; showToast(`${TURRETS[t.type].br[br].name}型になった！`, 2); }
+    pendingBr = null;
     sfx.upgrade();
     rings.push({ x: t.x, y: t.y, r: 6, max: 26, t: 0, life: 0.4, color: '#ffd84a' });
+    renderTray();
+  }
+  // 型のボタン：1 回目は説明を出し、同じボタンをもう一度押すと決まる
+  function chooseBranch(t, br) {
+    if (t.lv !== 1) return;
+    if (pendingBr && pendingBr.t === t && pendingBr.br === br) { upgrade(t, br); return; }
+    pendingBr = { t, br };
+    const B = TURRETS[t.type].br[br];
+    showToast(`${B.name}：${B.desc}（もう一度押すと決定）`, 3.5);
+    renderTray();
+  }
+  function cycleAim(t) {
+    if (t.type === 'emp') return;
+    t.aim = (t.aim + 1) % AIMS.length;
+    showToast(`ねらい：${AIMS[t.aim][1]}`, 1.2);
     renderTray();
   }
   function sell(t) {
@@ -491,27 +597,84 @@
     renderTray();
   }
 
-  // 一番基地に近い（残りの道のりが短い）戦車をねらう
-  function pickTarget(x, y, range) {
-    let best = null, bestLeft = Infinity;
+  // 射程に入っている戦車を、ねらい方の順に並べる（minR より近い戦車は除く）
+  const effSpeed = e => e.stunT > 0 ? 0 : e.T.speed * (1 - e.slow);
+  const AIM_KEY = {
+    first: e => e.path.len - e.d,       // 基地までの残りが短い順
+    last: e => -(e.path.len - e.d),
+    strong: e => -e.hp,
+    fast: e => -effSpeed(e),
+  };
+  function targets(x, y, range, aim = 'first', minR = 0) {
+    const list = [];
     for (const e of enemies) {
-      if (e.hp <= 0 || dist(e.x, e.y, x, y) > range + e.T.r * 0.5) continue;
-      const left = e.path.len - e.d;
-      if (left < bestLeft) { bestLeft = left; best = e; }
+      if (e.hp <= 0) continue;
+      const d = dist(e.x, e.y, x, y);
+      if (d > range + e.T.r * 0.5 || d < minR) continue;
+      list.push(e);
     }
-    return best;
+    const key = AIM_KEY[aim];
+    return list.sort((a, b) => key(a) - key(b));
   }
+  const pickTarget = (x, y, range, aim, minR) => targets(x, y, range, aim, minR)[0] || null;
 
-  function hurt(e, dmg, pierce) {
+  // 戦車にダメージ。pierce は装甲を無視、ap は装甲を無視する割合、quiet は白く光らせない（燃えているとき）
+  function hurt(e, dmg, pierce, ap = 0, quiet = false) {
     if (e.hp <= 0) return;
-    e.hp -= pierce ? dmg : Math.max(dmg * 0.25, dmg - e.T.armor);
-    e.hit = 0.08;
+    const armor = Math.max(0, e.T.armor - (e.weakT > 0 ? e.weak : 0)) * (1 - ap);
+    e.hp -= pierce ? dmg : Math.max(dmg * 0.25, dmg - armor);
+    if (!quiet) e.hit = 0.08;
     if (e.hp <= 0) {
       money += e.reward;
       addText(e.x, e.y - 6, `+${e.reward}`, '#ffd84a');
       explode(e.x, e.y, e.T.r);
       if (e.type === 'boss') { sfx.bigBoom(); shake = Math.max(shake, 0.4); } else sfx.boom();
     }
+  }
+  // 範囲攻撃（大砲・空爆・地雷）。cannon なら、電磁波で遅くなった戦車に 1.3 倍
+  function blast(x, y, R, dmg, cannon) {
+    for (const e of enemies) {
+      if (e.hp <= 0 || dist(e.x, e.y, x, y) > R + e.T.r * 0.5) continue;
+      const combo = cannon && (e.slowT > 0 || e.stunT > 0);
+      hurt(e, combo ? dmg * 1.3 : dmg);
+    }
+  }
+
+  // ---------- 支援 ----------
+  function chooseSkill(k) {
+    if (state !== 'play') return;
+    if (skillCd[k] > 0) { showToast(`${SKILLS[k].name}：あと ${Math.ceil(skillCd[k])} 秒（ウェーブ中に減る）`); sfx.no(); return; }
+    placeType = null;
+    if (sel) { sel = null; renderTray(); }
+    if (k === 'rush') {
+      skillCd.rush = SKILLS.rush.cd;
+      rushT = RUSH_TIME;
+      sfx.upgrade();
+      for (const t of turrets) rings.push({ x: t.x, y: t.y, r: 4, max: 24, t: 0, life: 0.5, color: '#ffd84a' });
+      showToast('一斉射撃！ 8 秒間、連射が倍に', 2);
+      skillMode = null;
+      return;
+    }
+    skillMode = skillMode === k ? null : k;
+    if (skillMode) showToast(k === 'air' ? '空爆する場所をタップ' : '地雷を置く道をタップ', 2.5);
+    refreshTray();
+  }
+  function useSkillAt(x, y) {
+    const k = skillMode;
+    if (k === 'air') {
+      strikes.push({ x, y, t: 0, dmg: airDmg(wave) });
+      tone(1200, 0.5, 'sine', 0.05, 600);
+    } else if (k === 'mine') {
+      const c = Math.floor(x / TILE), r = Math.floor(y / TILE);
+      if (!inMap(c, r) || grid[r][c] !== ROAD) { showToast('地雷は道の上に置こう'); sfx.no(); return; }
+      const mx = (c + 0.5) * TILE, my = (r + 0.5) * TILE;
+      if (mines.some(m => m.x === mx && m.y === my)) { showToast('ここにはもう置いてある'); sfx.no(); return; }
+      mines.push({ x: mx, y: my, dmg: mineDmg(wave), t: 0 });
+      tone(500, 0.08, 'square', 0.06);
+    }
+    skillCd[k] = SKILLS[k].cd;
+    skillMode = null;
+    toast = null;
   }
 
   function step(dt) {
@@ -525,11 +688,16 @@
         spawnT += u.gap;
       }
     }
+    // 支援の待ち時間はウェーブ中だけ減る（ウェーブの合間に待って貯めることはできない）
+    if (inWave) for (const k of SKILL_ORDER) skillCd[k] = Math.max(0, skillCd[k] - dt);
+    rushT = Math.max(0, rushT - dt);
     // 戦車
     for (const e of enemies) {
       if (e.hp <= 0) continue;
       if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) e.slow = 0; }
+      if (e.weakT > 0) { e.weakT -= dt; if (e.weakT <= 0) e.weak = 0; }
       e.hit = Math.max(0, e.hit - dt);
+      if (e.stunT > 0) { e.stunT -= dt; continue; } // 止まっている
       e.d += e.T.speed * TILE * (1 - e.slow) * dt;
       const q = pathPos(e.path, e.d);
       e.a += angleDiff(q.a, e.a) * Math.min(1, dt * 7);
@@ -555,12 +723,20 @@
       if (s.t >= s.dur) {
         s.done = true;
         const R = s.splash * TILE;
-        for (const e of enemies) if (e.hp > 0 && dist(e.x, e.y, s.tx, s.ty) <= R + e.T.r * 0.5) hurt(e, s.dmg);
+        blast(s.tx, s.ty, R, s.dmg, true);
         explode(s.tx, s.ty, 10, true);
         rings.push({ x: s.tx, y: s.ty, r: 4, max: R, t: 0, life: 0.25, color: 'rgba(255,200,120,0.8)' });
+        if (s.fire) fires.push({ x: s.tx, y: s.ty, r: R * 0.85, t: 0, life: 3, dps: s.fire });
       }
     }
     shells = shells.filter(s => !s.done);
+    // 燃えている所（装甲を無視して少しずつ焼く）
+    for (const f of fires) {
+      f.t += dt;
+      for (const e of enemies) if (e.hp > 0 && dist(e.x, e.y, f.x, f.y) <= f.r + e.T.r * 0.4) hurt(e, f.dps * dt, true, 0, true);
+      if (Math.random() < dt * 14) particles.push({ x: f.x + rand(-f.r, f.r) * 0.7, y: f.y + rand(-f.r, f.r) * 0.7, vx: rand(-5, 5), vy: rand(-25, -10), t: 0, life: 0.5, size: 2.5, grow: 3, color: ['255,170,50', '255,90,30'][Math.random() < 0.5 ? 0 : 1], alpha: 0.8 });
+    }
+    fires = fires.filter(f => f.t < f.life);
     // ミサイル（ねらった戦車がいなくなったら別の戦車を探す）
     for (const m of missiles) {
       if (!m.target || m.target.hp <= 0) m.target = pickTarget(m.x, m.y, 6 * TILE);
@@ -579,14 +755,41 @@
       }
       if (m.target && dist(m.x, m.y, m.target.x, m.target.y) < m.target.T.r + 4) {
         m.done = true;
-        hurt(m.target, m.dmg);
-        explode(m.x, m.y, 9, true);
+        // 対装甲型は、体力の多い戦車ほど大きなダメージ（体力 800 ごとに +1 倍、最大 2.5 倍）
+        const k = m.heavy ? 1 + Math.min(1.5, m.target.maxHp / 800) : 1;
+        hurt(m.target, m.dmg * k);
+        explode(m.x, m.y, m.heavy ? 12 : 9, true);
       } else if (m.life <= 0 || m.x < -60 || m.x > W + 60 || m.y < -60 || m.y > H + 60) {
         m.done = true;
         explode(m.x, m.y, 6, true);
       }
     }
     missiles = missiles.filter(m => !m.done);
+    // 空爆（飛行機が飛んできて、0.8 秒後に爆弾が落ちる）
+    for (const s of strikes) {
+      const was = s.t;
+      s.t += dt;
+      if (was < 0.8 && s.t >= 0.8) {
+        blast(s.x, s.y, 1.5 * TILE, s.dmg, false);
+        for (let i = 0; i < 4; i++) explode(s.x + rand(-18, 18), s.y + rand(-18, 18), 12);
+        rings.push({ x: s.x, y: s.y, r: 6, max: 1.5 * TILE, t: 0, life: 0.35, color: 'rgba(255,180,90,0.9)' });
+        sfx.bigBoom();
+        shake = Math.max(shake, 0.3);
+      }
+    }
+    strikes = strikes.filter(s => s.t < 1.6);
+    // 地雷（戦車が近づくと爆発）
+    for (const m of mines) {
+      m.t += dt;
+      if (enemies.some(e => e.hp > 0 && dist(e.x, e.y, m.x, m.y) < 0.45 * TILE + e.T.r * 0.5)) {
+        m.done = true;
+        blast(m.x, m.y, 1.1 * TILE, m.dmg, false);
+        explode(m.x, m.y, 14);
+        rings.push({ x: m.x, y: m.y, r: 4, max: 1.1 * TILE, t: 0, life: 0.3, color: 'rgba(255,200,120,0.9)' });
+        sfx.boom();
+      }
+    }
+    mines = mines.filter(m => !m.done);
     enemies = enemies.filter(e => e.hp > 0);
     // 効果
     for (const p of particles) {
@@ -609,58 +812,77 @@
       inWave = false;
       const S = STAGES[stageNo];
       if (wave >= S.waves) { win(); return; }
-      const b = waveBonus(wave);
-      money += b;
-      sfx.bonus();
-      showToast(`ウェーブ ${wave} 突破！ ボーナス +${b}`, 2.2);
+      const msg = payWaveBonus();
+      showToast(`ウェーブ ${wave} 突破！ ${msg}`, 2.4);
     }
   }
 
   function updateTurret(t, dt) {
-    const D = TURRETS[t.type];
     t.cd -= dt;
     t.flash = Math.max(0, t.flash - dt);
-    const range = D.range[t.lv] * TILE;
+    const range = stat(t, 'range') * TILE;
+    const rate = stat(t, 'rate') * (rushT > 0 ? 0.5 : 1);
     if (t.type === 'emp') {
       // 電磁波は向きがなく、射程に戦車がいれば周り全部にまとめて効く
-      if (t.cd > 0) return;
+      const stun = stat(t, 'stun');
+      if (stun) t.scd -= dt;
+      if (t.cd > 0 && !(stun && t.scd <= 0)) return;
       const hits = enemies.filter(e => e.hp > 0 && dist(e.x, e.y, t.x, t.y) <= range + e.T.r * 0.5);
       if (!hits.length) return;
-      t.cd = D.rate[t.lv];
+      if (stun && t.scd <= 0) {
+        // 衝撃波：まわりの戦車を止める（超重戦車は短く）
+        t.scd = stat(t, 'stunEvery');
+        rings.push({ x: t.x, y: t.y, r: 8, max: range, t: 0, life: 0.5, color: 'rgba(255,240,120,0.95)' });
+        tone(180, 0.35, 'square', 0.07, 60);
+        for (const e of hits) e.stunT = Math.max(e.stunT, e.type === 'boss' ? stun / 3 : stun);
+        if (t.cd > 0) return;
+      }
+      t.cd = rate;
       t.flash = 0.25;
-      rings.push({ x: t.x, y: t.y, r: 8, max: range, t: 0, life: 0.45, color: 'rgba(120,220,255,0.9)', fill: true });
+      const weak = stat(t, 'weak');
+      rings.push({ x: t.x, y: t.y, r: 8, max: range, t: 0, life: 0.45, color: weak ? 'rgba(200,130,255,0.9)' : 'rgba(120,220,255,0.9)', fill: true });
       sfx.emp();
+      const slow = stat(t, 'slow');
       for (const e of hits) {
-        e.slow = Math.max(e.slowT > 0 ? e.slow : 0, D.slow[t.lv]);
+        e.slow = Math.max(e.slowT > 0 ? e.slow : 0, slow);
         e.slowT = 1.6;
-        hurt(e, D.dmg[t.lv], true);
+        if (weak) { e.weak = Math.max(e.weakT > 0 ? e.weak : 0, weak); e.weakT = 1.6; }
+        hurt(e, stat(t, 'dmg'), true);
       }
       return;
     }
-    const target = pickTarget(t.x, t.y, range);
+    const aim = AIMS[t.aim][0];
+    const minR = (stat(t, 'minRange') || 0) * TILE;
+    const target = pickTarget(t.x, t.y, range, aim, minR);
     if (!target) return;
     const want = Math.atan2(target.y - t.y, target.x - t.x);
     t.a += angleDiff(want, t.a) * Math.min(1, dt * 14);
     if (t.cd > 0 || Math.abs(angleDiff(want, t.a)) > 0.3) return;
-    t.cd = D.rate[t.lv];
+    t.cd = rate;
     t.flash = 0.07;
+    const dmg = stat(t, 'dmg');
     const mx = t.x + Math.cos(t.a) * 17, my = t.y + Math.sin(t.a) * 17;
     if (t.type === 'mg') {
-      hurt(target, D.dmg[t.lv]);
+      hurt(target, dmg, false, stat(t, 'ap') || 0);
       tracers.push({ x1: mx, y1: my, x2: target.x + rand(-3, 3), y2: target.y + rand(-3, 3), t: 0 });
-      sparks(target.x, target.y, 2, '255,230,150');
+      sparks(target.x, target.y, 2, t.br === 'a' ? '255,140,90' : '255,230,150');
       sfx.mg();
     } else if (t.type === 'cannon') {
       // 砲弾が飛んでいる間に戦車が進む分を見込んで撃つ
-      const v = 7 * TILE;
+      const v = (t.br === 'b' ? 9 : 7) * TILE;
       let dur = dist(mx, my, target.x, target.y) / v;
-      const q = pathPos(target.path, target.d + target.T.speed * TILE * (1 - target.slow) * dur);
+      const q = pathPos(target.path, target.d + effSpeed(target) * TILE * dur);
       dur = dist(mx, my, q.x, q.y) / v;
-      shells.push({ x0: mx, y0: my, tx: q.x, ty: q.y, t: 0, dur, dmg: D.dmg[t.lv], splash: D.splash[t.lv] });
+      shells.push({ x0: mx, y0: my, tx: q.x, ty: q.y, t: 0, dur, dmg, splash: stat(t, 'splash'), fire: stat(t, 'fire') || 0 });
       puff(mx, my, '220,220,220', 4, true);
       sfx.cannon();
     } else if (t.type === 'missile') {
-      missiles.push({ x: mx, y: my, a: t.a, v: 2 * TILE, target, dmg: D.dmg[t.lv], life: 4, smoke: 0 });
+      const n = stat(t, 'count') || 1;
+      const list = n > 1 ? targets(t.x, t.y, range, aim) : [target];
+      for (let i = 0; i < n; i++) {
+        const a = t.a + (i - (n - 1) / 2) * 0.5;
+        missiles.push({ x: mx, y: my, a, v: 2 * TILE, target: list[i % list.length], dmg, heavy: !!stat(t, 'heavy'), life: 4, smoke: 0 });
+      }
       sfx.missile();
     }
   }
@@ -729,16 +951,40 @@
       ctx.fillStyle = `rgba(30,20,10,${0.35 * (1 - o.t / 8)})`;
       ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
     }
+    for (const f of fires) {
+      const k = 1 - f.t / f.life;
+      const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r);
+      g.addColorStop(0, `rgba(255,190,60,${0.55 * k})`);
+      g.addColorStop(0.6, `rgba(240,90,30,${0.4 * k})`);
+      g.addColorStop(1, 'rgba(160,40,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.92 + 0.08 * Math.sin(clock * 18 + f.x)), 0, Math.PI * 2); ctx.fill();
+    }
+    for (const m of mines) {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.arc(m.x + 1, m.y + 2, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a4a3a';
+      ctx.beginPath(); ctx.arc(m.x, m.y, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#6a6a58';
+      ctx.beginPath(); ctx.arc(m.x, m.y, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = Math.sin(m.t * 6) > 0 ? '#ff4a3a' : '#7a2a20';
+      ctx.beginPath(); ctx.arc(m.x, m.y, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
     drawSelection();
     for (const e of enemies) drawTank(e);
     for (const t of turrets) {
       ctx.save(); ctx.translate(t.x, t.y);
+      if (rushT > 0) {
+        ctx.fillStyle = `rgba(255,220,80,${0.18 + 0.12 * Math.sin(clock * 14)})`;
+        ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+      }
       const k = 1 + t.pop * 0.6;
       ctx.scale(k, k);
-      drawTurret(ctx, t.type, t.lv, t.a, t.flash, clock);
+      drawTurret(ctx, t.type, t.lv, t.a, t.flash, clock, t.br);
       ctx.restore();
     }
     drawGhost();
+    drawStrikes();
     for (const o of tracers) {
       ctx.strokeStyle = `rgba(255,240,160,${1 - o.t / 0.06})`; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
@@ -797,13 +1043,21 @@
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (toast) {
+      // 画面の幅に入りきらない文は、何行かに分けて出す
       ctx.font = '16px DotGothic16, monospace';
-      const w = ctx.measureText(toast.text).width + 26;
+      const maxW = cw - 40, lines = [];
+      let line = '';
+      for (const ch of toast.text) {
+        if (line && ctx.measureText(line + ch).width > maxW) { lines.push(line); line = ''; }
+        line += ch;
+      }
+      lines.push(line);
+      const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 26;
       ctx.globalAlpha = Math.min(1, toast.t * 3);
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(cw / 2 - w / 2, 10, w, 32);
+      ctx.fillRect(cw / 2 - w / 2, 10, w, 12 + lines.length * 20);
       ctx.fillStyle = '#fff';
-      ctx.fillText(toast.text, cw / 2, 27);
+      lines.forEach((l, i) => ctx.fillText(l, cw / 2, 27 + i * 20));
       ctx.globalAlpha = 1;
     }
     if (state === 'ending') {
@@ -820,7 +1074,12 @@
     let range = 0, x = 0, y = 0;
     if (sel && sel.turret) {
       const t = sel.turret;
-      x = t.x; y = t.y; range = TURRETS[t.type].range[t.lv] * TILE;
+      x = t.x; y = t.y; range = stat(t, 'range') * TILE;
+      const minR = stat(t, 'minRange');
+      if (minR) {
+        ctx.fillStyle = 'rgba(255,60,40,0.15)';
+        ctx.beginPath(); ctx.arc(x, y, minR * TILE, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 2;
       ctx.strokeRect(t.c * TILE + 1, t.r * TILE + 1, TILE - 2, TILE - 2);
     } else if (sel) {
@@ -837,6 +1096,23 @@
   }
   // マウスで指しているマスに、建てる予定の砲台を半透明で描く
   function drawGhost() {
+    if (skillMode && hover && state === 'play') {
+      const p = hover.p;
+      if (skillMode === 'air') {
+        ctx.strokeStyle = 'rgba(255,90,60,0.85)'; ctx.lineWidth = 2;
+        ctx.fillStyle = 'rgba(255,90,60,0.12)';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 * TILE, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else if (skillMode === 'mine' && inMap(hover.c, hover.r)) {
+        const ok = grid[hover.r][hover.c] === ROAD;
+        ctx.fillStyle = ok ? 'rgba(255,255,255,0.18)' : 'rgba(255,60,40,0.25)';
+        ctx.fillRect(hover.c * TILE, hover.r * TILE, TILE, TILE);
+        if (ok) {
+          ctx.strokeStyle = 'rgba(255,200,120,0.6)'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc((hover.c + 0.5) * TILE, (hover.r + 0.5) * TILE, 1.1 * TILE, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      return;
+    }
     if (!placeType || !hover || state !== 'play') return;
     const { c, r } = hover;
     if (!inMap(c, r)) return;
@@ -853,8 +1129,31 @@
     ctx.globalAlpha = 1;
   }
 
-  // 砲台の絵（原点が砲台の真ん中）。下の一覧のアイコンにも使う
-  function drawTurret(g, type, lv, a, flash, time) {
+  // 空爆：ねらった場所の印と、横切る飛行機（影と機体）
+  function drawStrikes() {
+    for (const s of strikes) {
+      if (s.t < 0.8) {
+        const k = s.t / 0.8;
+        ctx.strokeStyle = `rgba(255,70,50,${0.5 + 0.5 * Math.sin(clock * 20)})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(s.x, s.y, 1.5 * TILE * (1.2 - k * 0.2), 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s.x - 8, s.y); ctx.lineTo(s.x + 8, s.y); ctx.moveTo(s.x, s.y - 8); ctx.lineTo(s.x, s.y + 8); ctx.stroke();
+      }
+      const px = s.x + (s.t - 0.8) * 520, py = s.y;
+      for (const [ox, oy, col] of [[10, 22, 'rgba(0,0,0,0.3)'], [0, 0, '#5a6a7a']]) {
+        ctx.save(); ctx.translate(px + ox, py + oy);
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(16, 0); ctx.lineTo(4, -3); ctx.lineTo(-2, -16); ctx.lineTo(-7, -16); ctx.lineTo(-4, -3);
+        ctx.lineTo(-13, -3); ctx.lineTo(-17, -8); ctx.lineTo(-19, -8); ctx.lineTo(-17, 0);
+        ctx.lineTo(-19, 8); ctx.lineTo(-17, 8); ctx.lineTo(-13, 3); ctx.lineTo(-4, 3); ctx.lineTo(-7, 16);
+        ctx.lineTo(-2, 16); ctx.lineTo(4, 3); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  // 砲台の絵（原点が砲台の真ん中）。下の一覧のアイコンにも使う。br は Lv3 の型
+  function drawTurret(g, type, lv, a, flash, time, br) {
     const D = TURRETS[type];
     // 台座
     g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(-14, -12, 30, 30);
@@ -865,13 +1164,14 @@
     // レベルの印
     g.fillStyle = '#ffd84a';
     for (let i = 0; i < lv; i++) g.fillRect(-12 + i * 6, 10, 4, 3);
+    if (br) { g.fillStyle = br === 'a' ? '#ff8a4a' : '#c08aff'; g.fillRect(6, 9, 7, 5); }
     if (type === 'emp') {
       const pulse = 0.5 + 0.5 * Math.sin(time * 5);
       g.fillStyle = '#2a4a6a';
       g.beginPath(); g.arc(0, 0, 10, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = D.color; g.lineWidth = 2;
+      g.strokeStyle = br === 'a' ? '#ffe070' : br === 'b' ? '#c08aff' : D.color; g.lineWidth = 2;
       g.beginPath(); g.arc(0, 0, 7.5, 0, Math.PI * 2); g.stroke();
-      g.fillStyle = flash > 0 ? '#ffffff' : `rgba(150,230,255,${0.6 + 0.4 * pulse})`;
+      g.fillStyle = flash > 0 ? '#ffffff' : br === 'b' ? `rgba(210,160,255,${0.6 + 0.4 * pulse})` : `rgba(150,230,255,${0.6 + 0.4 * pulse})`;
       g.beginPath(); g.arc(0, 0, 4 + pulse * 1.2 + lv * 0.6, 0, Math.PI * 2); g.fill();
       g.strokeStyle = 'rgba(150,230,255,0.7)'; g.lineWidth = 1.5;
       for (let i = 0; i < 4; i++) {
@@ -885,15 +1185,18 @@
       g.fillStyle = '#2a3a28';
       const len = 15 + lv * 2;
       g.fillRect(2, -4.5, len, 2.6); g.fillRect(2, 1.9, len, 2.6);
-      if (lv >= 2) g.fillRect(2, -1.3, len + 2, 2.6);
+      if (br === 'b') { g.fillRect(2, -7.5, len - 2, 2.4); g.fillRect(2, 5.1, len - 2, 2.4); }
+      if (lv >= 2) { if (br === 'a') g.fillStyle = '#8a4a2a'; g.fillRect(2, -1.3, len + 2, 2.6); }
       if (flash > 0) { g.fillStyle = '#ffe080'; g.beginPath(); g.arc(len + 4, 0, 4.5, 0, Math.PI * 2); g.fill(); }
       g.fillStyle = D.color; g.beginPath(); g.arc(0, 0, 8, 0, Math.PI * 2); g.fill();
       g.fillStyle = '#4a8a3a'; g.beginPath(); g.arc(-1.5, 0, 4, 0, Math.PI * 2); g.fill();
     } else if (type === 'cannon') {
       const recoil = flash > 0 ? -4 : 0;
       g.fillStyle = '#333';
-      g.fillRect(4 + recoil, -3.5 - lv * 0.5, 16 + lv * 2, 7 + lv);
-      g.fillRect(17 + lv * 2 + recoil, -4.5 - lv * 0.5, 4, 9 + lv);
+      const bl = br === 'b' ? 26 : 16 + lv * 2;
+      g.fillRect(4 + recoil, -3.5 - lv * 0.5, bl, 7 + lv);
+      if (br === 'a') g.fillStyle = '#c0401a';
+      g.fillRect(1 + bl + recoil, -4.5 - lv * 0.5, 4, 9 + lv);
       g.fillStyle = D.color;
       g.beginPath();
       for (let i = 0; i < 8; i++) { const q = i * Math.PI / 4 + Math.PI / 8; g.lineTo(Math.cos(q) * 10.5, Math.sin(q) * 10.5); }
@@ -902,11 +1205,12 @@
     } else if (type === 'missile') {
       g.fillStyle = '#5a3a3a'; g.fillRect(-9, -11, 18, 22);
       g.fillStyle = D.color; g.fillRect(-8, -10, 16, 20);
-      const n = 2 + lv;
+      const n = br === 'a' ? 6 : br === 'b' ? 2 : 2 + lv;
+      const w = br === 'b' ? 3 : 1.8;
       for (let i = 0; i < n; i++) {
         const y = -10 + (20 / n) * (i + 0.5);
-        g.fillStyle = '#eee'; g.fillRect(-4, y - 1.8, 13, 3.6);
-        g.fillStyle = '#d03a2a'; g.beginPath(); g.moveTo(9, y - 1.8); g.lineTo(12.5, y); g.lineTo(9, y + 1.8); g.fill();
+        g.fillStyle = '#eee'; g.fillRect(-4, y - w, 13, w * 2);
+        g.fillStyle = br === 'b' ? '#3a3a3a' : '#d03a2a'; g.beginPath(); g.moveTo(9, y - w); g.lineTo(12.5 + w, y); g.lineTo(9, y + w); g.fill();
       }
     }
     g.restore();
@@ -960,6 +1264,24 @@
       ctx.strokeStyle = `rgba(120,220,255,${0.4 + 0.3 * Math.sin(clock * 20 + e.wob)})`; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, Math.PI * 2); ctx.stroke();
     }
+    if (e.weakT > 0) {
+      ctx.strokeStyle = 'rgba(200,130,255,0.75)'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(0, 0, r + 4.5, clock * 3, clock * 3 + Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (e.stunT > 0) {
+      // 止まっている：まわりに電気のジグザグ
+      ctx.strokeStyle = '#fff07a'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) {
+        const q = clock * 9 + i * 2.1;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(q) * (r + 1), Math.sin(q) * (r + 1));
+        ctx.lineTo(Math.cos(q + 0.25) * (r + 6), Math.sin(q + 0.25) * (r + 6));
+        ctx.lineTo(Math.cos(q + 0.5) * (r + 2), Math.sin(q + 0.5) * (r + 2));
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
   function shade(hex, d) {
@@ -994,22 +1316,48 @@
     setText(moneyEl, 'money', title ? '-' : `$${money}`);
     setText(livesEl, 'lives', title ? '-' : `${Math.max(0, lives)}/${S.lives}`);
     setText(waveEl, 'wave', title ? '-' : `${wave}/${S.waves}`);
-    const canNext = state === 'play' && !inWave && wave < S.waves;
+    const canNext = canCallNext();
     if (shown.next !== canNext) {
       shown.next = canNext;
       nextBtn.disabled = !canNext;
+      nextBtn.classList.toggle('early', canNext && inWave);
     }
-    const label = inWave && state === 'play' ? `戦闘中<small>残り ${enemies.length + spawnQ.length} 両</small>` : `▶ 出撃<small>ウェーブ ${Math.min(wave + 1, S.waves)}</small>`;
+    const left = enemies.length + spawnQ.length;
+    const label = !inWave || state !== 'play' ? `▶ 出撃<small>ウェーブ ${Math.min(wave + 1, S.waves)}</small>`
+      : canNext ? `▶ 次を呼ぶ<small>残り ${left} 両</small><small>早期 +$${earlyBonus(wave, enemies.length)}</small>`
+      : `戦闘中<small>残り ${left} 両</small>`;
     if (shown.nextLabel !== label) { shown.nextLabel = label; nextBtn.innerHTML = label; }
     if (shown.trayMoney !== money) { shown.trayMoney = money; refreshTray(); }
+    updateSkills();
+  }
+  // 支援のボタン（戦場の右下）。待ち時間はボタンを暗く塗って見せる
+  function renderSkills() {
+    skillsEl.innerHTML = SKILL_ORDER.map(k =>
+      `<button data-skill="${k}" title="${SKILLS[k].desc}（${SKILLS[k].key}）"><span>${SKILLS[k].name}</span><i class="cd"></i><span class="key">${SKILLS[k].key}</span></button>`).join('');
+  }
+  function updateSkills() {
+    const show = state !== 'title';
+    if (shown.skills !== show) { shown.skills = show; skillsEl.classList.toggle('hidden', !show); }
+    if (!show) return;
+    for (const b of skillsEl.children) {
+      const k = b.dataset.skill;
+      const cd = skillCd[k] || 0;
+      const v = `${cd > 0 ? Math.ceil(cd) : ''}|${skillMode === k}|${rushT > 0 && k === 'rush'}|${(cd / SKILLS[k].cd).toFixed(2)}`;
+      if (b._v === v) continue;
+      b._v = v;
+      b.style.setProperty('--p', (cd / SKILLS[k].cd).toFixed(3));
+      b.querySelector('.cd').textContent = cd > 0 ? Math.ceil(cd) : '';
+      b.classList.toggle('wait', cd > 0);
+      b.classList.toggle('on', skillMode === k || (k === 'rush' && rushT > 0));
+    }
   }
 
-  function iconCanvas(type, lv, size) {
+  function iconCanvas(type, lv, size, br) {
     const c = document.createElement('canvas');
     c.width = c.height = size * 2;
     const g = c.getContext('2d');
     g.setTransform(size * 2 / 36, 0, 0, size * 2 / 36, size, size);
-    drawTurret(g, type, lv, -Math.PI / 4, 0, 0.3);
+    drawTurret(g, type, lv, -Math.PI / 4, 0, 0.3, br);
     return c;
   }
   // 下の帯：ふだんは砲台の一覧、砲台を選んでいるときはその砲台の強化・売却
@@ -1017,26 +1365,38 @@
     tools.innerHTML = '';
     if (sel && sel.turret) {
       const t = sel.turret, D = TURRETS[t.type];
+      const B = t.br && D.br[t.br];
       const info = document.createElement('div');
       info.className = 'info';
-      info.appendChild(iconCanvas(t.type, t.lv, 20));
+      info.appendChild(iconCanvas(t.type, t.lv, 20, t.br));
       const txt = document.createElement('div');
       const stats = t.type === 'emp'
-        ? `減速 ${Math.round(D.slow[t.lv] * 100)}%・射程 ${D.range[t.lv]}`
-        : `威力 ${D.dmg[t.lv]}・射程 ${D.range[t.lv]}`;
-      txt.innerHTML = `<b>${D.name} Lv${t.lv + 1}</b><small>${stats}</small>`;
+        ? `減速 ${Math.round(stat(t, 'slow') * 100)}%・射程 ${stat(t, 'range')}`
+        : `威力 ${stat(t, 'dmg')}${stat(t, 'count') ? '×' + stat(t, 'count') : ''}・射程 ${stat(t, 'range')}`;
+      const note = B ? B.desc : t.lv === 1 ? '次の強化で型を 2 つから選ぶ' : '';
+      txt.innerHTML = `<b>${B ? B.name : D.name} Lv${t.lv + 1}</b><small>${stats}</small>${note ? `<small class="note">${note}</small>` : ''}`;
       info.appendChild(txt);
       tools.appendChild(info);
-      const up = document.createElement('button');
-      up.className = 'act up'; up.dataset.act = 'up';
-      up.innerHTML = t.lv >= 2 ? '強化<br>最大' : `強化<span class="key"> (U)</span><br>$${D.cost[t.lv + 1]}`;
-      up.disabled = t.lv >= 2;
-      const sl = document.createElement('button');
-      sl.className = 'act sell'; sl.dataset.act = 'sell';
-      sl.innerHTML = `売却<span class="key"> (S)</span><br>+$${Math.floor(t.spent * SELL_RATE)}`;
-      const cl = document.createElement('button');
-      cl.className = 'act close'; cl.dataset.act = 'close'; cl.textContent = '✕'; cl.title = '閉じる';
-      tools.append(up, sl, cl);
+      const mk = (cls, act, html) => {
+        const b = document.createElement('button');
+        b.className = 'act ' + cls; b.dataset.act = act; b.innerHTML = html;
+        tools.appendChild(b);
+        return b;
+      };
+      if (t.lv === 1) {
+        for (const k of ['a', 'b']) {
+          const o = D.br[k];
+          const b = mk('up br' + (pendingBr && pendingBr.t === t && pendingBr.br === k ? ' pend' : ''), 'br',
+            `${o.name}<span class="key"> (${k.toUpperCase()})</span><br>$${o.cost}`);
+          b.dataset.br = k; b.title = o.desc;
+        }
+      } else {
+        const up = mk('up', 'up', t.lv >= 2 ? '強化<br>最大' : `強化<span class="key"> (U)</span><br>$${D.cost[1]}`);
+        up.disabled = t.lv >= 2;
+      }
+      if (t.type !== 'emp') mk('aim', 'aim', `ねらい<span class="key"> (T)</span><br>${AIMS[t.aim][1]}`).title = 'ねらう戦車を切り替える';
+      mk('sell', 'sell', `売却<span class="key"> (S)</span><br>+$${Math.floor(t.spent * SELL_RATE)}`);
+      const cl = mk('close', 'close', '✕'); cl.title = '閉じる';
     } else {
       TURRET_ORDER.forEach((type, i) => {
         const D = TURRETS[type];
@@ -1059,8 +1419,9 @@
       b.classList.toggle('on', placeType === type);
       b.classList.toggle('pick', !!(sel && !sel.turret));
     }
-    const up = tools.querySelector('.up');
-    if (up && sel && sel.turret && sel.turret.lv < 2) up.disabled = money < TURRETS[sel.turret.type].cost[sel.turret.lv + 1];
+    if (sel && sel.turret && sel.turret.lv < 2) {
+      for (const up of tools.querySelectorAll('.up')) up.classList.toggle('poor', money < upCost(sel.turret, up.dataset.br));
+    }
   }
   function chooseType(type) {
     if (state !== 'play') return;
@@ -1069,6 +1430,7 @@
       if (build(type, sel.c, sel.r)) { sel = null; renderTray(); }
       return;
     }
+    skillMode = null;
     placeType = placeType === type ? null : type;
     if (placeType) showToast(`${TURRETS[type].name}：建てる場所をタップ`, 2.5);
     if (sel) { sel = null; renderTray(); } else refreshTray();
@@ -1080,16 +1442,23 @@
     if (!b) return;
     if (b.dataset.type) chooseType(b.dataset.type);
     else if (b.dataset.act === 'up' && sel && sel.turret) upgrade(sel.turret);
+    else if (b.dataset.act === 'br' && sel && sel.turret) chooseBranch(sel.turret, b.dataset.br);
+    else if (b.dataset.act === 'aim' && sel && sel.turret) cycleAim(sel.turret);
     else if (b.dataset.act === 'sell' && sel && sel.turret) sell(sel.turret);
     else if (b.dataset.act === 'close') { sel = null; renderTray(); }
   });
   nextBtn.addEventListener('click', () => { unlockAudio(); startWave(); });
+  skillsEl.addEventListener('click', e => {
+    unlockAudio();
+    const b = e.target.closest('button');
+    if (b) chooseSkill(b.dataset.skill);
+  });
 
   // ---------- 入力 ----------
   function tileAt(clientX, clientY) {
     const rc = canvas.getBoundingClientRect();
     const p = toWorld(clientX - rc.left, clientY - rc.top);
-    return { c: Math.floor(p.x / TILE), r: Math.floor(p.y / TILE) };
+    return { c: Math.floor(p.x / TILE), r: Math.floor(p.y / TILE), p };
   }
   function tapTile(c, r) {
     const t = turretAt(c, r);
@@ -1117,7 +1486,12 @@
   canvas.addEventListener('pointerdown', e => {
     unlockAudio();
     if (state !== 'play') return;
-    const { c, r } = tileAt(e.clientX, e.clientY);
+    const { c, r, p } = tileAt(e.clientX, e.clientY);
+    if (skillMode) {
+      if (p.x < 0 || p.y < 0 || p.x > W || p.y > H) { skillMode = null; return; }
+      useSkillAt(p.x, p.y);
+      return;
+    }
     tapTile(c, r);
   });
   canvas.addEventListener('pointermove', e => {
@@ -1139,6 +1513,9 @@
     if (i >= 0) chooseType(TURRET_ORDER[i]);
     else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); startWave(); }
     else if ((e.key === 'u' || e.key === 'U') && sel && sel.turret) upgrade(sel.turret);
+    else if ((e.key === 'a' || e.key === 'A' || e.key === 'b' || e.key === 'B') && sel && sel.turret) chooseBranch(sel.turret, e.key.toLowerCase());
+    else if ((e.key === 't' || e.key === 'T') && sel && sel.turret) cycleAim(sel.turret);
+    else if ('qweQWE'.includes(e.key) && e.key.length === 1) chooseSkill(SKILL_ORDER['qwe'.indexOf(e.key.toLowerCase())]);
     else if ((e.key === 's' || e.key === 'S' || e.key === 'Delete') && sel && sel.turret) sell(sel.turret);
   });
 
@@ -1185,6 +1562,9 @@
         <li>空き地をタップして<b>砲台</b>を建てる。砲台をタップすると強化・売却</li>
         <li>「▶ 出撃」でウェーブ開始。戦車を倒すと資金がもらえる</li>
         <li>戦車が基地にたどり着くと耐久が減り、0 で負け</li>
+        <li>Lv3 では砲台の<b>型</b>を 2 つから選ぶ。ねらう戦車も切り替えられる</li>
+        <li>右下の<b>支援</b>（空爆・地雷・一斉射撃）はウェーブ中に使える</li>
+        <li>戦車が出そろえば、倒し切る前に次を呼べる（<b>早期ボーナス</b>）。手持ちの資金には<b>利息</b>が付く</li>
       </ul>
       <div class="legend">
         <span>機関砲：速射</span><span>大砲：範囲攻撃</span><span>電磁波：減速</span><span>ミサイル：遠距離</span>
@@ -1276,6 +1656,7 @@
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(field);
   buildMap();
+  renderSkills();
   showTitle();
   requestAnimationFrame(frame);
 
@@ -1284,7 +1665,7 @@
     get state() { return state; }, get money() { return money; }, set money(v) { money = v; }, get lives() { return lives; },
     get wave() { return wave; }, get inWave() { return inWave; }, get turrets() { return turrets; },
     get enemies() { return enemies; }, get grid() { return grid; }, get portrait() { return portrait; },
-    start: startStage, build, upgrade, startWave, sim(sec) { for (let i = 0; i < sec * 60; i++) step(1 / 60); },
+    start: startStage, build, upgrade, startWave, chooseSkill, useSkillAt, cycleAim, get skillCd() { return skillCd; }, sim(sec) { for (let i = 0; i < sec * 60; i++) step(1 / 60); },
     get world() { return { scale, offX, offY }; },
   };
 })();
