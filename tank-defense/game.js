@@ -121,8 +121,8 @@
 
   let dpr = 1, scale = 1, offX = 0, offY = 0, portrait = false;
   let state = 'title'; // title / play / pause / ending / over / clear
-  let stageNo = 0, unlocked = loadNum('tankdef.stage', STAGES.length - 1);
-  let stars = loadStars();
+  // 遊べるステージと星の数（保存した値は、下の「小さな道具」ができてから読み込む）
+  let stageNo = 0, unlocked = 0, stars = [];
   let grid = [], paths = [], base = { c: 0, r: 0, x: 0, y: 0 }, bg = null, bgScale = 0;
   let turrets = [], enemies = [], shells = [], missiles = [];
   let tracers = [], rings = [], particles = [], decals = [], texts = [];
@@ -161,6 +161,8 @@
   function save(key, v) {
     try { localStorage.setItem(key, String(v)); } catch (e) { /* 保存できなくても遊べる */ }
   }
+  unlocked = loadNum('tankdef.stage', STAGES.length - 1);
+  stars = loadStars();
 
   // ---------- 音（WebAudio で簡単な効果音） ----------
   let actx = null, muted = false, noiseBuf = null;
