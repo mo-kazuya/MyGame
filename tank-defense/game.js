@@ -107,23 +107,29 @@
   // ---------- ステージ ----------
   // paths は戦車の通り道（マスの [列, 行] を角ごとに並べる。最初の点は画面の外、最後の点が基地）。
   // 道が 2 本あるステージでは、戦車が交互に分かれて出てくる。
-  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率。
+  // rocks・water には砲台を建てられない。hp はこのステージの戦車の体力の倍率、count は戦車の数の倍率。
+  // pay は戦車を倒したときの資金の倍率（大部隊は 1 両あたりが安く、重装甲は高い）。
+  // trait は敵の特色（'armor' 重装甲部隊：体力が多い／'swarm' 大部隊：数が多い）。
+  // story はステージの前に出す話、dev はこのステージで新しく開発されて使えるようになるもの（DEV のキー）。
   // ground は地面の色（書かなければ草原、'sand' は砂漠、'snow' は雪原）
   const STAGES = [
     {
-      name: '草原の一本道', waves: 8, hp: 1.0, money: 220, lives: 20,
+      name: '草原の一本道', waves: 8, hp: 1.55, count: 1.2, money: 220, lives: 20, dev: ['air'],
+      story: '国境の草原に、敵の戦車部隊が現れた。手元にあるのは試作の砲台と、空軍の支援だけ。基地を守り抜け！',
       paths: [[[-1, 1], [6, 1], [6, 5], [12, 5], [12, 8], [15, 8]]],
       rocks: [[2, 3], [10, 3], [14, 2], [9, 8]], water: [[3, 7], [4, 7], [3, 8], [4, 8]],
       note: 'まずは機関砲と大砲で。曲がり角のそばに建てると長く撃ち続けられる',
     },
     {
-      name: 'つづら折りの谷', waves: 10, hp: 1.35, money: 240, lives: 20,
+      name: 'つづら折りの谷', waves: 10, hp: 2.2, count: 1.6, trait: 'swarm', pay: 0.65, money: 240, lives: 20, dev: ['mg', 'mine'],
+      story: '開発部が機関砲の改良に成功し、地雷も届いた。谷の奥から、戦車の大群が押し寄せてくる！',
       paths: [[[-1, 1], [12, 1], [12, 3], [3, 3], [3, 7], [12, 7], [12, 9]]],
       rocks: [[14, 0], [7, 5], [15, 8], [0, 8]], water: [[8, 5], [9, 5], [8, 6]],
       note: '曲がりくねった長い道。重戦車が出てきたらミサイルの出番',
     },
     {
-      name: '挟み撃ち', waves: 12, hp: 1.6, money: 280, lives: 20,
+      name: '挟み撃ち', waves: 12, hp: 2.25, count: 1.1, trait: 'armor', pay: 1.4, money: 280, lives: 20, dev: ['cannon'],
+      story: '大砲の新しい砲弾が完成した。敵は装甲を厚くした部隊で、二方向から攻めてくる。',
       paths: [
         [[-1, 1], [6, 1], [6, 5], [15, 5]],
         [[-1, 8], [9, 8], [9, 5], [15, 5]],
@@ -132,7 +138,8 @@
       note: '戦車が 2 つの道からやって来る。道が合流するところを固めよう',
     },
     {
-      name: '最終防衛線', waves: 15, hp: 1.9, money: 320, lives: 20,
+      name: '最終防衛線', waves: 15, hp: 2.1, count: 1.6, trait: 'swarm', pay: 0.9, money: 320, lives: 20, dev: ['emp', 'rush'],
+      story: '電磁波の研究が実を結び、全砲台への一斉射撃の指令も出せるようになった。基地を囲む大軍を食い止めろ。',
       paths: [
         [[7, -1], [7, 2], [2, 2], [2, 7], [13, 7], [13, 2], [10, 2], [10, 4]],
         [[4, 10], [4, 7], [13, 7], [13, 2], [10, 2], [10, 4]],
@@ -141,7 +148,8 @@
       note: '基地は真ん中。上と下から押し寄せる戦車の大軍を、15 ウェーブ守り切れ',
     },
     {
-      name: '砂漠の三叉路', waves: 15, hp: 2.2, money: 340, lives: 20, ground: 'sand',
+      name: '砂漠の三叉路', waves: 15, hp: 3.0, count: 1.15, trait: 'armor', pay: 1.8, money: 340, lives: 20, ground: 'sand', dev: ['missile'],
+      story: 'ついにミサイルの改良型が完成した。砂漠の向こうから、分厚い装甲の戦車部隊が 3 方向から迫る。',
       paths: [
         [[-1, 1], [4, 1], [4, 3], [10, 3], [10, 5], [15, 5]],
         [[-1, 6], [3, 6], [3, 8], [8, 8], [8, 5], [15, 5]],
@@ -151,18 +159,46 @@
       note: '3 本の道。下から来る道はとても短い。地雷と空爆で抜け道をふさごう',
     },
     {
-      name: '雪原の大回廊', waves: 18, hp: 3.3, money: 320, lives: 20, ground: 'snow',
+      name: '雪原の大回廊', waves: 18, hp: 4.6, count: 1.5, trait: 'both', pay: 0.85, money: 320, lives: 20, ground: 'snow', dev: ['cd'],
+      story: 'すべての開発が完了し、支援の準備も早くなった。硬い戦車の大軍による、敵の最後の大攻勢を雪原で迎え撃て！',
       paths: [[[-1, 0], [14, 0], [14, 9], [1, 9], [1, 2], [12, 2], [12, 7], [3, 7], [3, 4], [9, 4]]],
       rocks: [[0, 5], [7, 5], [15, 4]], water: [[5, 5], [6, 5], [5, 6]],
       note: 'うず巻きの長い道を、とても硬い戦車がやって来る。型の組み合わせで 18 ウェーブ耐え抜け',
     },
   ];
 
+  // 開発されるもの。型（mg など）は Lv3 への強化、air・mine・rush は支援、cd は支援の待ち時間を短くする
+  const DEV = {
+    air: '支援「空爆」',
+    mine: '支援「地雷」',
+    rush: '支援「一斉射撃」',
+    mg: '機関砲の Lv3「徹甲弾」「二連装」',
+    cannon: '大砲の Lv3「焼夷弾」「長距離砲」',
+    emp: '電磁波の Lv3「衝撃波」「弱体化」',
+    missile: 'ミサイルの Lv3「多弾頭」「対装甲」',
+    cd: '支援の待ち時間 25% 短縮',
+  };
+  const TRAITS = {
+    armor: '重装甲部隊：戦車の体力がとても多い',
+    swarm: '大部隊：戦車の数がとても多い',
+    both: '総攻撃：硬い戦車が大軍でやって来る',
+  };
+  // ステージ n で使えるもの（それまでのステージで開発された分も全部）
+  const devUpTo = n => new Set(STAGES.slice(0, n + 1).flatMap(S => S.dev || []));
+  let tech = new Set();
+  const has = k => tech.has(k);
+  const skillCdOf = k => SKILLS[k].cd * (has('cd') ? 0.75 : 1);
+
   // ウェーブの中身。n は 1 から数えたウェーブの番号、total はそのステージのウェーブ数。
+  // ステージの count の分だけ戦車の数を増やす（そのぶん間隔を少し詰める）。超重戦車の数は変えない。
   // 偵察車の群れ → 軽戦車 → 重戦車 の 3 つを繰り返しながら、だんだん数が増える。最後のウェーブには超重戦車
   function makeWave(n, total) {
     const list = [];
-    const add = (type, num, gap) => { for (let i = 0; i < num; i++) list.push({ type, gap }); };
+    const cnt = STAGES[stageNo].count || 1;
+    const add = (type, num, gap) => {
+      if (type !== 'boss') { num = Math.round(num * cnt); gap /= Math.sqrt(cnt); }
+      for (let i = 0; i < num; i++) list.push({ type, gap });
+    };
     const k = n % 3;
     if (k === 1) add('scout', 5 + Math.round(n * 1.3), 0.55);
     if (k === 2) { add('light', 3 + Math.round(n * 0.8), 0.95); add('scout', Math.floor(n / 2), 0.5); }
@@ -488,6 +524,8 @@
     tracers = []; rings = []; particles = []; decals = []; texts = [];
     fires = []; mines = []; strikes = []; rushT = 0; skillMode = null; pendingBr = null;
     skillCd = { air: 0, mine: 0, rush: 0 };
+    tech = devUpTo(n);
+    renderSkills();
     sel = null; placeType = null; hover = null; shake = 0;
     buildMap();
     state = 'play';
@@ -532,7 +570,7 @@
     const hp = Math.round(T.hp * hpScale(wave));
     const e = {
       T, type: u.type, path: p, d: 0, hp, maxHp: hp,
-      reward: Math.round(T.reward * rewardScale(wave)),
+      reward: Math.max(1, Math.round(T.reward * rewardScale(wave) * (STAGES[stageNo].pay || 1))),
       x: 0, y: 0, a: 0, slow: 0, slowT: 0, stunT: 0, weak: 0, weakT: 0, hit: 0, wob: rand(0, 6),
       off: u.type === 'boss' ? 0 : rand(-5, 5), // 道の真ん中から少し左右にずらして、重なって見えないように
     };
@@ -561,6 +599,7 @@
   // 強化。Lv2 → Lv3 は型（br：'a' か 'b'）を選ぶ
   function upgrade(t, br) {
     if (t.lv >= 2) return;
+    if (t.lv === 1 && !has(t.type)) { showToast(`${TURRETS[t.type].name}の Lv3 はまだ開発中`); sfx.no(); return; }
     if (t.lv === 1 && !br) { showToast('Lv3 は 2 つの型から選ぶ（A / B）'); return; }
     const cost = upCost(t, br);
     if (money < cost) { showToast('資金が足りません'); sfx.no(); return; }
@@ -573,7 +612,7 @@
   }
   // 型のボタン：1 回目は説明を出し、同じボタンをもう一度押すと決まる
   function chooseBranch(t, br) {
-    if (t.lv !== 1) return;
+    if (t.lv !== 1 || !has(t.type)) return;
     if (pendingBr && pendingBr.t === t && pendingBr.br === br) { upgrade(t, br); return; }
     pendingBr = { t, br };
     const B = TURRETS[t.type].br[br];
@@ -642,12 +681,12 @@
 
   // ---------- 支援 ----------
   function chooseSkill(k) {
-    if (state !== 'play') return;
+    if (state !== 'play' || !has(k)) return;
     if (skillCd[k] > 0) { showToast(`${SKILLS[k].name}：あと ${Math.ceil(skillCd[k])} 秒（ウェーブ中に減る）`); sfx.no(); return; }
     placeType = null;
     if (sel) { sel = null; renderTray(); }
     if (k === 'rush') {
-      skillCd.rush = SKILLS.rush.cd;
+      skillCd.rush = skillCdOf('rush');
       rushT = RUSH_TIME;
       sfx.upgrade();
       for (const t of turrets) rings.push({ x: t.x, y: t.y, r: 4, max: 24, t: 0, life: 0.5, color: '#ffd84a' });
@@ -672,7 +711,7 @@
       mines.push({ x: mx, y: my, dmg: mineDmg(wave), t: 0 });
       tone(500, 0.08, 'square', 0.06);
     }
-    skillCd[k] = SKILLS[k].cd;
+    skillCd[k] = skillCdOf(k);
     skillMode = null;
     toast = null;
   }
@@ -1332,7 +1371,7 @@
   }
   // 支援のボタン（戦場の右下）。待ち時間はボタンを暗く塗って見せる
   function renderSkills() {
-    skillsEl.innerHTML = SKILL_ORDER.map(k =>
+    skillsEl.innerHTML = SKILL_ORDER.filter(has).map(k =>
       `<button data-skill="${k}" title="${SKILLS[k].desc}（${SKILLS[k].key}）"><span>${SKILLS[k].name}</span><i class="cd"></i><span class="key">${SKILLS[k].key}</span></button>`).join('');
   }
   function updateSkills() {
@@ -1342,10 +1381,11 @@
     for (const b of skillsEl.children) {
       const k = b.dataset.skill;
       const cd = skillCd[k] || 0;
-      const v = `${cd > 0 ? Math.ceil(cd) : ''}|${skillMode === k}|${rushT > 0 && k === 'rush'}|${(cd / SKILLS[k].cd).toFixed(2)}`;
+      const full = skillCdOf(k);
+      const v = `${cd > 0 ? Math.ceil(cd) : ''}|${skillMode === k}|${rushT > 0 && k === 'rush'}|${(cd / full).toFixed(2)}`;
       if (b._v === v) continue;
       b._v = v;
-      b.style.setProperty('--p', (cd / SKILLS[k].cd).toFixed(3));
+      b.style.setProperty('--p', (cd / full).toFixed(3));
       b.querySelector('.cd').textContent = cd > 0 ? Math.ceil(cd) : '';
       b.classList.toggle('wait', cd > 0);
       b.classList.toggle('on', skillMode === k || (k === 'rush' && rushT > 0));
@@ -1373,7 +1413,7 @@
       const stats = t.type === 'emp'
         ? `減速 ${Math.round(stat(t, 'slow') * 100)}%・射程 ${stat(t, 'range')}`
         : `威力 ${stat(t, 'dmg')}${stat(t, 'count') ? '×' + stat(t, 'count') : ''}・射程 ${stat(t, 'range')}`;
-      const note = B ? B.desc : t.lv === 1 ? '次の強化で型を 2 つから選ぶ' : '';
+      const note = B ? B.desc : t.lv === 1 ? (has(t.type) ? '次の強化で型を 2 つから選ぶ' : '') : '';
       txt.innerHTML = `<b>${B ? B.name : D.name} Lv${t.lv + 1}</b><small>${stats}</small>${note ? `<small class="note">${note}</small>` : ''}`;
       info.appendChild(txt);
       tools.appendChild(info);
@@ -1383,7 +1423,9 @@
         tools.appendChild(b);
         return b;
       };
-      if (t.lv === 1) {
+      if (t.lv === 1 && !has(t.type)) {
+        mk('up', 'up', 'Lv3<br>開発中').disabled = true;
+      } else if (t.lv === 1) {
         for (const k of ['a', 'b']) {
           const o = D.br[k];
           const b = mk('up br' + (pendingBr && pendingBr.t === t && pendingBr.br === k ? ' pend' : ''), 'br',
@@ -1553,7 +1595,7 @@
     sel = null; placeType = null;
     renderTray();
     const btns = STAGES.map((S, i) => i <= unlocked
-      ? `<button data-act="stage" data-n="${i}">${i + 1}. ${S.name}<small>${S.waves} ウェーブ</small><span class="st">${stars[i] ? starText(stars[i]) : '　'}</span></button>`
+      ? `<button data-act="stage" data-n="${i}">${i + 1}. ${S.name}<small>${S.waves} ウェーブ${S.trait ? '・' + { armor: '重装甲', swarm: '大部隊', both: '総攻撃' }[S.trait] : ''}</small><span class="st">${stars[i] ? starText(stars[i]) : '　'}</span></button>`
       : `<button disabled>${i + 1}. ？？？<small>前のステージをクリア</small></button>`).join('');
     showOverlay(`
       <h1>鉄壁の砲台</h1>
@@ -1562,8 +1604,8 @@
         <li>空き地をタップして<b>砲台</b>を建てる。砲台をタップすると強化・売却</li>
         <li>「▶ 出撃」でウェーブ開始。戦車を倒すと資金がもらえる</li>
         <li>戦車が基地にたどり着くと耐久が減り、0 で負け</li>
-        <li>Lv3 では砲台の<b>型</b>を 2 つから選ぶ。ねらう戦車も切り替えられる</li>
-        <li>右下の<b>支援</b>（空爆・地雷・一斉射撃）はウェーブ中に使える</li>
+        <li>ステージが進むと<b>開発</b>が進み、砲台の Lv3（<b>型</b>を 2 つから選ぶ）や<b>支援</b>（空爆・地雷・一斉射撃）が増えていく</li>
+        <li>砲台をタップすると、ねらう戦車も切り替えられる</li>
         <li>戦車が出そろえば、倒し切る前に次を呼べる（<b>早期ボーナス</b>）。手持ちの資金には<b>利息</b>が付く</li>
       </ul>
       <div class="legend">
@@ -1574,8 +1616,13 @@
   }
   function showBriefing(n) {
     const S = STAGES[n];
+    const newDev = (S.dev || []).map(k => `<li>${DEV[k]}</li>`).join('');
+    const all = [...devUpTo(n)].filter(k => !(S.dev || []).includes(k)).map(k => DEV[k]);
     showOverlay(`
       <h2>ステージ ${n + 1}：${S.name}</h2>
+      <p class="story">${S.story}</p>
+      ${newDev ? `<div class="dev"><b>開発部より：新しく使えるもの</b><ul>${newDev}</ul>${all.length ? `<small>これまでの開発：${all.join('・')}</small>` : ''}</div>` : ''}
+      ${S.trait ? `<p class="trait">敵情報：${TRAITS[S.trait]}</p>` : ''}
       <p class="note">${S.note}</p>
       <p>ウェーブ ${S.waves}・資金 $${S.money}・基地の耐久 ${S.lives}</p>
       <button data-act="go" data-n="${n}">はじめる</button><br>
@@ -1600,7 +1647,7 @@
         <h2>ステージ ${stageNo + 1} クリア！</h2>
         <p class="stars">${starText(lastStars)}</p>
         <p>基地の耐久 ${lives}/${S.lives} で守り切った${lives >= S.lives ? '（無傷！）' : ''}</p>
-        ${next ? '' : '<p class="note">全ステージクリア！ おめでとう！ 星 3 つを目指してみよう</p>'}
+        ${next ? `<p class="note">開発部より：次のステージでは ${(STAGES[stageNo + 1].dev || []).map(k => DEV[k]).join('・')} が使えるようになる</p>` : '<p class="note">全ステージクリア！ おめでとう！ 星 3 つを目指してみよう</p>'}
         ${next ? `<button data-act="stage" data-n="${stageNo + 1}">次のステージへ</button><br>` : ''}
         <button class="sub" data-act="retry">もう一度</button>
         <button class="sub" data-act="title">ステージ選択へ</button>`);
@@ -1665,7 +1712,7 @@
     get state() { return state; }, get money() { return money; }, set money(v) { money = v; }, get lives() { return lives; },
     get wave() { return wave; }, get inWave() { return inWave; }, get turrets() { return turrets; },
     get enemies() { return enemies; }, get grid() { return grid; }, get portrait() { return portrait; },
-    start: startStage, build, upgrade, startWave, chooseSkill, useSkillAt, cycleAim, get skillCd() { return skillCd; }, sim(sec) { for (let i = 0; i < sec * 60; i++) step(1 / 60); },
+    get tech() { return tech; }, start: startStage, build, upgrade, startWave, chooseSkill, useSkillAt, cycleAim, get skillCd() { return skillCd; }, sim(sec) { for (let i = 0; i < sec * 60; i++) step(1 / 60); },
     get world() { return { scale, offX, offY }; },
   };
 })();
