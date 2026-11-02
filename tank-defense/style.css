@@ -152,6 +152,12 @@ button { font: inherit; color: #fff; cursor: pointer; touch-action: manipulation
 .panel p { margin: 8px 0; font-size: 15px; line-height: 1.6; }
 .panel .rules { text-align: left; font-size: 14px; line-height: 1.7; margin: 10px 0 12px; padding-left: 1.2em; }
 .panel .note { color: #ffe9a0; font-size: 14px; }
+.panel .story { text-align: left; font-size: 14px; line-height: 1.7; }
+.panel .dev { text-align: left; margin: 8px 0; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid #7a9a6a; border-radius: 4px; font-size: 14px; }
+.panel .dev b { font-weight: normal; color: #9ae07a; }
+.panel .dev ul { margin: 4px 0; padding-left: 1.2em; line-height: 1.6; }
+.panel .dev small { display: block; color: #b8c4a0; font-size: 12px; line-height: 1.5; }
+.panel .trait { color: #ff9a8a; font-size: 14px; }
 .panel .stars { font-size: 30px; color: #ffd84a; letter-spacing: 0.15em; }
 .panel .stars i { font-style: normal; color: #4a5440; }
 .panel button {
