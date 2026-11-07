@@ -20,6 +20,9 @@
   const DIFFS = { easy: { name: 'かんたん' }, normal: { name: 'ふつう' }, hard: { name: 'むずかしい' } };
   const GRID_OPS = { add: { name: 'たし算', sym: '+' }, sub: { name: 'ひき算', sym: '−' }, mul: { name: 'かけ算', sym: '×' } };
   const GRID_SIZES = { 5: { name: '25マス' }, 10: { name: '100マス' } };
+  const INPUTS = { key: { name: 'テンキー' }, hand: { name: '手書き' } };
+  const HW_COMMIT_MS = 400;   // 手書き：指を離してからこの時間たつと 1 文字確定
+  const HW_ASSIST = 0.15;     // 手書き：正しい数字の確からしさがこれ以上なら、読み取りがゆれても正解にする
   const CHAIN_MS = { easy: 1700, normal: 1300, hard: 1000 };  // 暗算リレーで 1 つの式を見せる時間
   const CHAIN_LIVES = 3, CHAIN_START = 3, CHAIN_MAX = 20;
 
@@ -39,12 +42,14 @@
     get(k, d) { try { const v = localStorage.getItem('brain.' + k); return v === null ? d : v; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('brain.' + k, String(v)); } catch (e) { /* 保存できなくても遊べる */ } },
   };
-  const opts = { mode: 'speed', diff: 'normal', gop: 'add', gsize: '10' };
-  for (const [k, table] of [['mode', MODES], ['diff', DIFFS], ['gop', GRID_OPS], ['gsize', GRID_SIZES]]) {
+  const opts = { mode: 'speed', diff: 'normal', gop: 'add', gsize: '10', input: 'key' };
+  for (const [k, table] of [['mode', MODES], ['diff', DIFFS], ['gop', GRID_OPS], ['gsize', GRID_SIZES], ['input', INPUTS]]) {
     const v = store.get(k, opts[k]);
     if (table[v]) opts[k] = v;
   }
-  const bestKey = (o = opts) => o.mode === 'grid' ? `best.grid.${o.gop}.${o.gsize}` : `best.${o.mode}.${o.diff}`;
+  // 手書きはテンキーより時間がかかるので、自己ベストを分けて記録する
+  const usesHand = (o = opts) => o.input === 'hand' && o.mode !== 'compare';
+  const bestKey = (o = opts) => (o.mode === 'grid' ? `best.grid.${o.gop}.${o.gsize}` : `best.${o.mode}.${o.diff}`) + (usesHand(o) ? '.hand' : '');
   function getBest(o) { const v = +store.get(bestKey(o), 0) || 0; return v > 0 ? v : 0; }
 
   // 毎日のトレーニング記録
@@ -265,7 +270,7 @@
       mode, diff: opts.diff, gop: opts.gop, gsize: +opts.gsize,
       o: { ...opts },
       t0: 0, pauseTotal: 0, pausedAt: 0, timers: [],
-      phase: 'count', input: '', locked: true,
+      phase: 'count', input: '', probs: [], locked: true,
       correct: 0, miss: 0, combo: 0, maxCombo: 0, qn: 0, lastKey: '', misses: [],
     };
     paused = false;
@@ -273,6 +278,7 @@
     stage.classList.remove('paused');
     $pause.classList.add('hide');
     pad.classList.toggle('cmp', mode === 'compare');
+    setHandPad(usesHand(G.o));
     pad.classList.add('off');
     pad.classList.remove('hide');
     if (mode === 'grid') {
@@ -310,7 +316,8 @@
 
   // ---- スピード計算・あなうめ計算・どっちが大きい？ ----
   function nextQ() {
-    G.input = ''; G.qn++;
+    G.input = ''; G.probs = []; G.qn++;
+    hwClear();
     let q, key;
     for (let i = 0; i < 6; i++) {
       q = G.mode === 'speed' ? qSpeed(G.diff) : G.mode === 'blank' ? qBlank(G.diff) : qCompare(G.diff);
@@ -391,7 +398,8 @@
     G.ch = makeChain(G.diff, G.steps);
     G.chStart = elapsed();
     G.chShown = -2;
-    G.input = '';
+    G.input = ''; G.probs = [];
+    hwClear();
     G.sub = 'show';
     G.locked = true; pad.classList.add('off');
     setVal(1, G.steps);
@@ -499,7 +507,7 @@
       G.miss++; sfx.ng(); setVal(2, G.miss);
       G.misses.push(`${g.rows[i]} ${g.op} ${g.cols[j]} = ${gridAns(i, j)}（${esc(given)} と答えた）`);
     }
-    g.idx++; G.input = '';
+    g.idx++; G.input = ''; G.probs = [];
     setVal(1, n * n - g.idx);
     barFill.style.transform = `scaleX(${g.idx / (n * n)})`;
     if (g.idx >= n * n) { finish(); return; }
@@ -507,24 +515,31 @@
   }
 
   // ---- 入力 ----
-  function press(k) {
+  function press(k, probs) {
     if (!G || G.phase !== 'play' || paused || G.locked) return;
+    if (G.mode === 'practice') return;
     if (G.mode === 'compare') {
       if (!'LRE'.includes(k)) return;
       judgeTimed(k === G.q.ans, k);
       return;
     }
     if (k === 'L' || k === 'R' || k === 'E') return;
-    if (k === 'del') G.input = G.input.slice(0, -1);
-    else if (k === 'clr') G.input = '';
-    else if (G.input.length < 5) G.input += k;
+    if (k === 'del') { G.input = G.input.slice(0, -1); G.probs.pop(); hwClear(); }
+    else if (k === 'clr') { G.input = ''; G.probs = []; hwClear(); }
+    else if (G.input.length < 5) { G.input += k; G.probs.push(probs || null); }
     else return;
-    if (G.mode !== 'grid') sfx.key();
+    if (G.mode !== 'grid' && !probs) sfx.key();
     const ans = String(G.mode === 'chain' ? G.ch.ans : G.q.ans);
     showInput();
     // 答えと同じ桁数を入れたら自動で答え合わせ
     if (G.input.length >= ans.length) {
-      const ok = G.input === ans, given = G.input;
+      let ok = G.input === ans;
+      // 手書きで読み取りがゆれたとき：書いた字が正しい数字にも十分見えるなら正解にする
+      if (!ok && G.input.length === ans.length && G.probs.some(p => p) &&
+          [...ans].every((ch, i) => G.input[i] === ch || (G.probs[i] && G.probs[i][+ch] >= HW_ASSIST))) {
+        ok = true; G.input = ans; showInput();
+      }
+      const given = G.input;
       if (G.mode === 'grid') judgeGrid(ok, given);
       else if (G.mode === 'chain') judgeChain(ok, given);
       else judgeTimed(ok, given);
@@ -578,6 +593,7 @@
     if (!G || G.phase !== 'play' || paused) return;
     paused = true; G.pausedAt = now();
     stage.classList.add('paused');
+    if (G.mode === 'practice') { paused = false; stage.classList.remove('paused'); showTitle(); return; }
     showPanel(`<h2>ポーズ中</h2>
       <p>${MODES[G.mode].name}</p>
       <button class="go" data-act="resume">つづける</button><br>
@@ -606,6 +622,7 @@
       for (const x of due) { if (G === x.g && G.phase === 'play') x.fn(); }
       if (!G || G.phase !== 'play') return;
     }
+    if (G.mode === 'practice') return;
     if (G.mode === 'grid') {
       setVal(0, fmtTime(t));
     } else if (G.mode === 'chain') {
@@ -684,6 +701,7 @@
     const bestTxt = o.mode === 'grid'
       ? (isRec ? value.toFixed(1) : (prev / 10).toFixed(1)) + ' 秒'
       : `${isRec ? value : prev} ${o.mode === 'chain' ? 'ステップ' : '問'}`;
+    if (usesHand(o)) rows.push(['入力', '手書き']);
     recordDay(G.correct);
     const r = rankIndex(o, value);
     isRec ? sfx.rec() : sfx.end();
@@ -729,6 +747,7 @@
   function showTitle() {
     countToken++;
     G = null; paused = false;
+    hwClear();
     $pause.classList.add('hide');
     stage.classList.remove('paused');
     stage.innerHTML = '';
@@ -742,8 +761,10 @@
         `<button data-mode="${k}" class="${opts.mode === k ? 'on' : ''}"><span class="badge">${m.badge}</span>
           <span class="nm">${m.name}<small>${bestLabel(k)}</small></span><span class="ds">${m.desc}</span></button>`).join('')}</div>
       ${isGrid ? optRow('計算', 'gop', GRID_OPS) + optRow('マスの数', 'gsize', GRID_SIZES) : optRow('難しさ', 'diff', DIFFS)}
+      ${opts.mode === 'compare' ? '' : optRow('答えの入力', 'input', INPUTS)}
       <button class="go" data-act="start">スタート</button>
-      <p class="keys-help">数字を答えの桁数ぶん入れると自動で答え合わせ。<br>PC：数字キーで入力・Backspace で消す・Esc でポーズ（どっちが大きい？は ← → ↓）</p>
+      ${usesHand() ? '<br><button class="sub2" data-act="practice">手書きのためし書き</button>' : ''}
+      <p class="keys-help">数字を答えの桁数ぶん入れると自動で答え合わせ。${usesHand() ? '<br>手書き：下の枠に数字を1つずつ書く。指を離して少し待つか、右に続けて書くと次の字へ。' : ''}<br>PC：数字キーで入力・Backspace で消す・Esc でポーズ（どっちが大きい？は ← → ↓）</p>
       <a href="../index.html">← ゲーム一覧へ</a>`);
   }
 
@@ -762,8 +783,130 @@
     const act = b.dataset.act;
     if (act === 'start' || act === 'retry') { if (G && act === 'retry') Object.assign(opts, G.o); start(); }
     else if (act === 'resume') resume();
+    else if (act === 'practice') startPractice();
     else if (act === 'title') showTitle();
   });
+
+  // ---- 手書き入力 ----
+  const hwCanvas = $('hwc'), hwCtx = hwCanvas.getContext('2d'), hwGuide = $('hwguide'), hwRead = $('hwread');
+  let hwStrokes = [], hwCur = null, hwTimer = 0, hwPointer = null;
+  function setHandPad(on) {
+    pad.classList.toggle('hw', on);
+    if (on) requestAnimationFrame(hwResize);
+  }
+  function hwResize() {
+    const r = hwCanvas.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    hwCanvas.width = Math.round(r.width * dpr); hwCanvas.height = Math.round(r.height * dpr);
+    hwCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    hwRedraw();
+  }
+  function hwRedraw() {
+    const w = hwCanvas.width, h = hwCanvas.height;
+    hwCtx.save(); hwCtx.setTransform(1, 0, 0, 1, 0, 0); hwCtx.clearRect(0, 0, w, h); hwCtx.restore();
+    hwCtx.lineCap = 'round'; hwCtx.lineJoin = 'round'; hwCtx.lineWidth = 7; hwCtx.strokeStyle = '#f4f8ff';
+    for (const s of hwStrokes) {
+      hwCtx.beginPath();
+      s.forEach(([x, y], i) => i ? hwCtx.lineTo(x, y) : hwCtx.moveTo(x, y));
+      if (s.length === 1) hwCtx.lineTo(s[0][0] + 0.1, s[0][1]);
+      hwCtx.stroke();
+    }
+    hwGuide.classList.toggle('hide', hwStrokes.length > 0);
+  }
+  function hwClear() {
+    clearTimeout(hwTimer);
+    hwStrokes = []; hwCur = null; hwPointer = null;
+    hwRedraw();
+  }
+  const hwBox = strokes => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const s of strokes) for (const [x, y] of s) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    return { x0, x1, y0, y1, w: x1 - x0, h: y1 - y0 };
+  };
+  const hwActive = () => G && G.phase === 'play' && !paused && (!G.locked || G.mode === 'practice');
+  // 書いた線を 1 文字として読み取る
+  function hwCommit(keep) {
+    clearTimeout(hwTimer);
+    // keep：次の字として残す線（右に続けて書いたとき）
+    const strokes = keep ? hwStrokes.filter(s => !keep.includes(s)) : hwStrokes;
+    hwStrokes = keep || []; hwRedraw();
+    if (!strokes.length) return;
+    const b = hwBox(strokes);
+    if (Math.max(b.w, b.h) < 6) return;   // ちょんと触っただけ
+    const p = window.HW && HW.predict(strokes);
+    if (!p) return;
+    let best = 0; for (let i = 1; i < 10; i++) if (p[i] > p[best]) best = i;
+    hwRead.textContent = best;
+    hwRead.classList.remove('show'); void hwRead.offsetWidth; hwRead.classList.add('show');
+    if (G && G.mode === 'practice') practiceShow(p, best, strokes);
+    else press(String(best), p);
+  }
+  hwCanvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (!hwActive() || hwPointer !== null) return;
+    audio();
+    const r = hwCanvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    clearTimeout(hwTimer);
+    hwPointer = e.pointerId;
+    try { hwCanvas.setPointerCapture(e.pointerId); } catch (err) { /* なくてもよい */ }
+    hwCur = [[x, y]]; hwStrokes.push(hwCur);
+    hwRedraw();
+  });
+  hwCanvas.addEventListener('pointermove', e => {
+    if (e.pointerId !== hwPointer || !hwCur) return;
+    e.preventDefault();
+    const r = hwCanvas.getBoundingClientRect();
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])) hwCur.push([ev.clientX - r.left, ev.clientY - r.top]);
+    hwRedraw();
+  });
+  function hwUp(e) {
+    if (e.pointerId !== hwPointer) return;
+    const cur = hwCur;
+    hwPointer = null; hwCur = null;
+    clearTimeout(hwTimer);
+    // いま書いた線が前の線と横に重ならず、右にはなれていたら、前の線を 1 文字として確定する（続けて書ける）
+    if (cur && hwStrokes.length > 1) {
+      const prev = hwBox(hwStrokes.filter(s => s !== cur)), b = hwBox([cur]);
+      if (b.x0 > prev.x1 + Math.max(4, Math.max(prev.h, b.h) * 0.04)) {
+        hwCommit([cur]);
+        if (!hwActive()) { hwClear(); return; }
+      }
+    }
+    hwTimer = setTimeout(() => { if (hwActive()) hwCommit(); else hwClear(); }, HW_COMMIT_MS);
+  }
+  hwCanvas.addEventListener('pointerup', hwUp);
+  hwCanvas.addEventListener('pointercancel', hwUp);
+  hwCanvas.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('resize', () => { if (pad.classList.contains('hw')) hwResize(); });
+
+  // ---- 手書きのためし書き ----
+  function startPractice() {
+    G = { mode: 'practice', o: { ...opts }, phase: 'play', t0: now(), pauseTotal: 0, pausedAt: 0, timers: [], locked: false, input: '', probs: [], hist: [] };
+    paused = false;
+    hideOverlay();
+    pad.classList.remove('cmp', 'off', 'hide');
+    setHandPad(true);
+    $pause.classList.remove('hide');
+    $bar.classList.add('hide');
+    setStats(['ためし書き', '書いた数', '']);
+    setVal(0, ''); setVal(1, 0); setVal(2, '');
+    stage.innerHTML = `<div class="practice"><div class="lbl">下の枠に数字を書いてみよう</div>
+      <div class="pbig" id="pbig">?</div><div class="cands" id="pcands">左上の Ⅱ でもどる</div>
+      <div class="phist" id="phist"></div></div>`;
+  }
+  function practiceShow(p, best, strokes) {
+    G.hist.push(best);
+    setVal(1, G.hist.length);
+    const order = [...p.keys()].sort((a, b) => p[b] - p[a]);
+    $('pbig').textContent = best;
+    $('pcands').innerHTML = order.slice(0, 3).map((d, i) =>
+      `<span class="${i ? '' : 'top'}">${d}<small>${Math.round(p[d] * 100)}%</small></span>`).join('');
+    $('phist').textContent = 'これまで：' + G.hist.slice(-16).join(' ');
+    sfx.key();
+  }
 
   window.addEventListener('resize', fitGrid);
   showTitle();

@@ -9,7 +9,7 @@
 <title>計算道場</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1.0">
+<link rel="stylesheet" href="style.css?v=1.1">
 </head>
 <body>
 <div id="top">
@@ -29,6 +29,10 @@
     <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
     <button data-k="clr" class="fn">C</button><button data-k="0">0</button><button data-k="del" class="fn">⌫</button>
   </div>
+  <div class="hand">
+    <div class="hwbox"><canvas id="hwc"></canvas><span id="hwguide">ここに数字を<br>1つずつ書く</span><span id="hwread"></span></div>
+    <div class="hwkeys"><button data-k="del" class="fn">⌫</button><button data-k="clr" class="fn">C</button></div>
+  </div>
   <div class="cmpkeys">
     <button data-k="L"><b>◀</b>左が大きい</button>
     <button data-k="E"><b>＝</b>同じ</button>
@@ -36,6 +40,8 @@
   </div>
 </div>
 <div id="overlay"></div>
-<script src="game.js?v=1.0"></script>
+<script src="handwriting.js?v=1.0"></script>
+<script src="handwriting-model.js?v=1.0"></script>
+<script src="game.js?v=1.1"></script>
 </body>
 </html>
