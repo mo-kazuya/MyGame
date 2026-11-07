@@ -27,6 +27,11 @@
     open: { name: 'ひろば' },
     rocks: { name: '岩場' },    // 岩が置いてある
   };
+  const CTRLS = {                // スマホのボタン
+    pad: { name: '十字ボタン' },   // 上下左右を直接えらぶ
+    turn: { name: '左右ボタン' },  // ヘビから見て左・右に曲がる（片手で遊びやすい）
+  };
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   const STAR_EVERY = 5;         // エサをこの数食べるごとに金の星が出る
   const STAR_TIME = 40;         // 星が消えるまでのマス数（進んだ回数）
   const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
@@ -37,11 +42,16 @@
     get(k, d) { try { const v = localStorage.getItem('snake.' + k); return v === null ? d : v; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('snake.' + k, String(v)); } catch (e) { /* 保存できなくても遊べる */ } },
   };
-  const opts = { speed: 'normal', wall: 'wall', map: 'open' };
-  for (const [k, table] of [['speed', SPEEDS], ['wall', WALLS], ['map', MAPS]]) {
+  const opts = { speed: 'normal', wall: 'wall', map: 'open', ctrl: 'pad' };
+  for (const [k, table] of [['speed', SPEEDS], ['wall', WALLS], ['map', MAPS], ['ctrl', CTRLS]]) {
     const v = store.get(k, opts[k]);
     if (table[v]) opts[k] = v;
   }
+  function applyCtrl() {
+    document.body.classList.toggle('touch', isTouch);
+    document.body.classList.toggle('ctrl-turn', opts.ctrl === 'turn');
+  }
+  applyCtrl();
   const bestKey = () => `best.${opts.speed}.${opts.wall}.${opts.map}`;
   const getBest = () => Math.max(0, Math.floor(+store.get(bestKey(), 0) || 0));
 
@@ -249,28 +259,60 @@
     }
   });
 
-  // 盤面をスワイプして向きを変える
+  // スワイプで向きを変える（盤面の外の余白や十字ボタンのすき間からでもよい）
+  const SWIPE = 16; // 曲がったと判定する指の移動量（px）
   let touch = null;
-  canvas.addEventListener('pointerdown', e => {
-    touch = { x: e.clientX, y: e.clientY, id: e.pointerId };
-  });
-  canvas.addEventListener('pointermove', e => {
-    if (!touch || touch.id !== e.pointerId) return;
-    const dx = e.clientX - touch.x, dy = e.clientY - touch.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+  const noSwipe = el => el.closest('#overlay, #top, #pad button');
+  document.addEventListener('touchstart', e => {
+    if (noSwipe(e.target)) return;
+    e.preventDefault(); // ページのスクロール・拡大・バウンドを止める
+    const t = e.changedTouches[0];
+    touch = { x: t.clientX, y: t.clientY, id: t.identifier };
+  }, { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (noSwipe(e.target)) return;
+    e.preventDefault();
+    if (!touch) return;
+    const t = [...e.changedTouches].find(c => c.identifier === touch.id);
+    if (!t) return;
+    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE) return;
     turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
-    touch.x = e.clientX; touch.y = e.clientY; // 続けてスワイプすると連続で曲がれる
-  });
-  const endTouch = () => { touch = null; };
-  canvas.addEventListener('pointerup', endTouch);
-  canvas.addEventListener('pointercancel', endTouch);
+    touch.x = t.clientX; touch.y = t.clientY; // 指を離さずに続けて動かすと連続で曲がれる
+  }, { passive: false });
+  const endTouch = e => { if (touch && [...e.changedTouches].some(c => c.identifier === touch.id)) touch = null; };
+  document.addEventListener('touchend', endTouch);
+  document.addEventListener('touchcancel', endTouch);
+  document.addEventListener('gesturestart', e => e.preventDefault()); // iPhone のピンチ拡大を止める
+  document.addEventListener('dblclick', e => e.preventDefault());
 
-  // 十字ボタン
+  // マウスでのドラッグ（パソコンで試すとき用）
+  let drag = null;
+  canvas.addEventListener('mousedown', e => { drag = { x: e.clientX, y: e.clientY }; });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE) return;
+    turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    drag.x = e.clientX; drag.y = e.clientY;
+  });
+  window.addEventListener('mouseup', () => { drag = null; });
+
+  // 十字ボタン・左右ボタン（押した瞬間に反応する）
+  const LEFT_OF = { up: 'left', left: 'down', down: 'right', right: 'up' };
+  const RIGHT_OF = { up: 'right', right: 'down', down: 'left', left: 'up' };
   for (const b of document.querySelectorAll('#pad button')) {
     b.addEventListener('pointerdown', e => {
-      e.preventDefault(); turn(b.dataset.dir);
+      e.preventDefault();
+      if (b.dataset.dir) turn(b.dataset.dir);
+      else {
+        const base = queue.length ? queue[queue.length - 1] : dir;
+        turn((b.dataset.rot === 'left' ? LEFT_OF : RIGHT_OF)[base]);
+      }
       b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 120);
+      if (navigator.vibrate) navigator.vibrate(8);
     });
+    b.addEventListener('contextmenu', e => e.preventDefault());
   }
 
   function pause() {
@@ -306,11 +348,12 @@
         <li>ヘビを操って <span style="color:#ff7a6a">●エサ</span> を食べよう。食べるたびに体が伸びて、少しずつ速くなる</li>
         <li>壁・岩・自分の体にぶつかったら終わり</li>
         <li>エサを ${STAR_EVERY} 個食べるごとに <span style="color:#ffd84a">★金の星</span> が出る。消える前に取ると大きな得点（早いほど高い）</li>
-        <li>操作：矢印キー / WASD、スマホはスワイプか十字ボタン。P / Esc でポーズ</li>
+        <li>${isTouch ? '操作：画面のどこでもスワイプ、または下のボタン。指を離さずに動かすと続けて曲がれる' : '操作：矢印キー / WASD（盤面をドラッグしても曲がれる）。P / Esc でポーズ'}</li>
       </ul>
       ${optRow('speed', 'スピード（速いほど得点が高い）', SPEEDS)}
       ${optRow('wall', '盤面の端', WALLS)}
       ${optRow('map', 'マップ', MAPS)}
+      ${isTouch ? optRow('ctrl', '操作ボタン（左右＝ヘビから見て曲がる）', CTRLS) : ''}
       <p class="bests">この組み合わせのハイスコア：<b id="tbest">${best}</b></p>
       <button class="go" data-act="start">▶ スタート</button>
       <p><a href="../index.html">← ゲーム一覧へ</a></p>`);
@@ -332,6 +375,7 @@
       opts[b.dataset.opt] = b.dataset.val;
       store.set(b.dataset.opt, b.dataset.val);
       for (const o of overlay.querySelectorAll(`[data-opt="${b.dataset.opt}"]`)) o.classList.toggle('on', o === b);
+      if (b.dataset.opt === 'ctrl') { applyCtrl(); resize(); return; }
       best = getBest(); updateHud();
       const t = document.getElementById('tbest'); if (t) t.textContent = best;
       makeRocks(); snake = []; food = null; star = null;

@@ -36,39 +36,47 @@ button { font: inherit; color: #fff; cursor: pointer; touch-action: manipulation
 #field { grid-area: field; position: relative; }
 #screen { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
-/* 十字ボタン（タッチできる画面だけ） */
+/* スマホのボタン（タッチできる画面だけ）。押しやすいよう大きめにする */
 #pad {
   grid-area: pad; display: none;
-  grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 52px);
+  grid-template-columns: repeat(3, minmax(0, 104px)); grid-template-rows: 62px 62px;
   grid-template-areas: ". up ." "left down right";
-  gap: 6px; justify-content: center; padding: 8px 0 10px;
+  gap: 8px; justify-content: center; padding: 10px 12px 12px;
   background: #10241c; border-top: 2px solid #000;
-}
-#pad button {
-  border: 2px solid #5a8a70; border-radius: 10px; background: #1c3a2c; font-size: 20px; padding: 0;
   touch-action: none;
 }
-#pad button:active, #pad button.hit { background: #3a6a50; border-color: #b8f0c8; }
+#pad button {
+  border: 2px solid #5a8a70; border-radius: 12px; background: #1c3a2c; font-size: 24px; padding: 0;
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+#pad button.hit { background: #3a6a50; border-color: #b8f0c8; transform: scale(0.96); }
 #pad [data-dir=up] { grid-area: up; }
 #pad [data-dir=left] { grid-area: left; }
 #pad [data-dir=down] { grid-area: down; }
 #pad [data-dir=right] { grid-area: right; }
-@media (pointer: coarse) { #pad { display: grid; } }
-body.nopad #pad { display: none; }
+#pad .rt { display: none; font-size: 20px; }
+#pad .rt b { display: block; font-weight: normal; font-size: 36px; line-height: 1; }
+body.touch #pad { display: grid; }
+/* 左右ボタン：画面の下半分を左右に 2 つ */
+body.ctrl-turn #pad { grid-template-columns: 1fr 1fr; grid-template-rows: 112px; grid-template-areas: none; }
+body.ctrl-turn #pad .dp { display: none; }
+body.ctrl-turn #pad .rt { display: block; }
+#field, body.touch { touch-action: none; }
 
-/* 横持ちのスマホでは十字ボタンを右に置く */
-@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
-  body {
+/* 横持ちのスマホではボタンを右に置く */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.touch {
     grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "top top" "field pad";
   }
-  #top { padding: 3px 10px; }
-  #top button { width: 36px; height: 36px; }
-  #pad {
-    grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px);
+  body.touch #top { padding: 3px 10px; }
+  body.touch #top button { width: 36px; height: 36px; }
+  body.touch #pad {
+    grid-template-columns: repeat(3, 60px); grid-template-rows: repeat(3, 60px);
     grid-template-areas: ". up ." "left . right" ". down .";
-    align-content: center; padding: 0 10px; border-top: none; border-left: 2px solid #000;
+    align-content: center; padding: 0 12px; border-top: none; border-left: 2px solid #000;
   }
+  body.touch.ctrl-turn #pad { grid-template-columns: 120px; grid-template-rows: 1fr 1fr; grid-template-areas: none; align-content: stretch; padding: 10px 12px; }
 }
 
 #overlay {
@@ -108,3 +116,16 @@ body.nopad #pad { display: none; }
 .panel button.sub { margin: 6px; padding: 8px 14px; font-size: 15px; background: #24443a; border: 2px solid #5a8a70; border-radius: 6px; }
 .panel a { color: #b8e08a; font-size: 13px; }
 .panel .bests { font-size: 13px; color: #c8dcc8; margin: 6px 0; }
+
+/* 背の低い画面（スマホなど）ではタイトル画面を詰めて、スタートボタンまで見えるようにする */
+@media (max-height: 760px), (max-width: 480px) {
+  .panel { padding: 12px 14px; }
+  .panel h1 { font-size: 24px; }
+  .panel .rules { font-size: 12.5px; line-height: 1.5; margin: 6px 0 8px; }
+  .panel .opt { margin: 6px 0; }
+  .panel .opt .lbl { font-size: 12px; margin-bottom: 3px; }
+  .panel .opt button { padding: 5px 10px; font-size: 14px; }
+  .panel .bests { margin: 4px 0; }
+  .panel button.go { margin-top: 6px; }
+  .panel p { margin: 6px 0; }
+}
