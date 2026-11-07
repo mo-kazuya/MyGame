@@ -11,6 +11,7 @@
 | [`underground-dragon/`](underground-dragon/) | [地底の竜](underground-dragon/README.md) | アクションRPG（ザナドゥ風） |
 | [`airport-controller/`](airport-controller/) | [エアポート管制官](airport-controller/README.md) | 管制官ゲーム（ライン描画） |
 | [`tank-defense/`](tank-defense/) | [鉄壁の砲台](tank-defense/README.md) | タワーディフェンス |
+| [`snake/`](snake/) | [くねくねスネーク](snake/README.md) | スネークゲーム |
 
 ## 構成
 
@@ -21,6 +22,7 @@ games.js             トップページに並べるゲームの一覧
 underground-dragon/  地底の竜
 airport-controller/  エアポート管制官
 tank-defense/        鉄壁の砲台
+snake/               くねくねスネーク
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。
