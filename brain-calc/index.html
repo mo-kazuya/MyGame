@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#18213a">
+<title>計算道場</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1.0">
+</head>
+<body>
+<div id="top">
+  <button id="pause" title="ポーズ（Esc）">Ⅱ</button>
+  <div class="stat" id="st0"><span class="lbl">のこり</span><b>60</b></div>
+  <div class="stat" id="st1"><span class="lbl">正解</span><b>0</b></div>
+  <div class="stat" id="st2"><span class="lbl">コンボ</span><b>0</b></div>
+  <span class="grow"></span>
+  <button id="sound" title="音のオン・オフ">♪</button>
+</div>
+<div id="bar"><i></i></div>
+<div id="stage"></div>
+<div id="pad">
+  <div class="keys">
+    <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+    <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+    <button data-k="clr" class="fn">C</button><button data-k="0">0</button><button data-k="del" class="fn">⌫</button>
+  </div>
+  <div class="cmpkeys">
+    <button data-k="L"><b>◀</b>左が大きい</button>
+    <button data-k="E"><b>＝</b>同じ</button>
+    <button data-k="R"><b>▶</b>右が大きい</button>
+  </div>
+</div>
+<div id="overlay"></div>
+<script src="game.js?v=1.0"></script>
+</body>
+</html>

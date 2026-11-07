@@ -1,6 +1,6 @@
 # レトロゲーム集
 
-ブラウザですぐ遊べる、レトロゲーム風の小さなゲームを集めたリポジトリです。どのゲームも HTML5 Canvas と素の JavaScript だけで動きます（ビルド不要）。パソコンでもスマホでも遊べます。
+ブラウザですぐ遊べる、レトロゲーム風の小さなゲームを集めたリポジトリです。どのゲームも HTML5（Canvas など）と素の JavaScript だけで動きます（ビルド不要）。パソコンでもスマホでも遊べます。
 
 - 公開版（トップページ）：https://mo-kazuya.github.io/MyGame/
 
@@ -12,6 +12,7 @@
 | [`airport-controller/`](airport-controller/) | [エアポート管制官](airport-controller/README.md) | 管制官ゲーム（ライン描画） |
 | [`tank-defense/`](tank-defense/) | [鉄壁の砲台](tank-defense/README.md) | タワーディフェンス |
 | [`snake/`](snake/) | [くねくねスネーク](snake/README.md) | スネークゲーム |
+| [`brain-calc/`](brain-calc/) | [計算道場](brain-calc/README.md) | 脳トレ（計算） |
 
 ## 構成
 
@@ -23,6 +24,7 @@ underground-dragon/  地底の竜
 airport-controller/  エアポート管制官
 tank-defense/        鉄壁の砲台
 snake/               くねくねスネーク
+brain-calc/          計算道場
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。

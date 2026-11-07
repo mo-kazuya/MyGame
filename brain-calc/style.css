@@ -1,0 +1,240 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: #121a2e;
+  color: #eef2ff;
+  font-family: 'DotGothic16', 'MS Gothic', monospace;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+/* 上の帯／時間バー／問題／テンキー */
+body {
+  display: grid; height: 100vh; height: 100dvh;
+  grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "bar" "stage" "pad";
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+button { font: inherit; color: #fff; cursor: pointer; touch-action: manipulation; }
+
+#top {
+  grid-area: top;
+  display: flex; align-items: center; gap: 16px;
+  padding: 6px 10px; background: #18213a; border-bottom: 2px solid #000;
+}
+#top button {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; padding: 0;
+  border: 2px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.35); font-size: 17px;
+}
+#top button.off { opacity: 0.45; text-decoration: line-through; }
+#top button.hide { visibility: hidden; }
+.stat { display: flex; flex-direction: column; line-height: 1.15; min-width: 52px; }
+.stat .lbl { font-size: 11px; color: #9fb0d8; }
+.stat b { font-weight: normal; font-size: 20px; white-space: nowrap; }
+#st0 b { color: #7ae0ff; }
+#st1 b { color: #ffd84a; }
+#st2 b { color: #ff8fb8; }
+#st0 b.low { color: #ff6a5a; }
+.grow { flex: 1; }
+
+#bar { grid-area: bar; height: 6px; background: #0a0f1d; }
+#bar i { display: block; height: 100%; width: 100%; background: #7ae0ff; transform-origin: left; }
+#bar.low i { background: #ff6a5a; }
+#bar.hide { visibility: hidden; }
+
+/* ---- 問題エリア（黒板） ---- */
+#stage {
+  grid-area: stage; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: #1f3a34; border: 0 solid #5a3a22;
+  background-image: radial-gradient(ellipse at 50% 40%, rgba(255,255,255,0.06), transparent 70%);
+}
+#stage.paused > * { visibility: hidden; }
+.q { width: 100%; padding: 12px; text-align: center; }
+.qno { font-size: 15px; color: #b8d8c8; margin-bottom: 10px; }
+.expr { font-size: clamp(28px, 10vw, 64px); white-space: nowrap; line-height: 1.3; }
+.expr.long { font-size: clamp(22px, 7.6vw, 52px); }
+.expr .op { color: #ffd84a; margin: 0 0.18em; }
+.expr .eq { color: #b8d8c8; margin: 0 0.18em; }
+.slot {
+  display: inline-block; min-width: 1.6em; padding: 0 0.15em; text-align: center;
+  border-bottom: 4px solid #ff8fb8; color: #ff8fb8;
+}
+.slot.empty { color: rgba(255,143,184,0.45); }
+.slot.box { border: 3px solid #ff8fb8; border-radius: 4px; }
+.fb { min-height: 1.6em; margin-top: 14px; font-size: 18px; color: #ffe9a0; }
+.fb .ans { color: #ff8fb8; font-size: 1.3em; }
+
+/* ○ × のしるし */
+.mark {
+  position: absolute; left: 50%; top: 50%; pointer-events: none;
+  font-size: min(48vw, 46vh); line-height: 1; transform: translate(-50%, -50%) scale(0.6);
+  opacity: 0; color: #ff5a4a; text-shadow: 0 0 12px rgba(0,0,0,0.4);
+}
+.mark.ng { color: #6ab0ff; }
+.mark.show { animation: mark 0.45s ease-out; }
+@keyframes mark {
+  0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.6); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+}
+.shake { animation: shake 0.3s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.combo-pop {
+  position: absolute; top: 12%; left: 0; right: 0; text-align: center; font-size: 22px; color: #ffd84a;
+  pointer-events: none; animation: pop 0.8s ease-out forwards;
+}
+@keyframes pop { 0% { opacity: 1; transform: translateY(10px); } 100% { opacity: 0; transform: translateY(-20px); } }
+
+/* カウントダウン */
+.count { font-size: min(36vw, 34vh); color: #ffd84a; animation: count 0.6s ease-out; }
+.count.go { font-size: min(18vw, 20vh); }
+@keyframes count { 0% { transform: scale(1.6); opacity: 0; } 40% { opacity: 1; } 100% { transform: scale(1); } }
+
+/* どっちが大きい？ */
+.cmp { display: flex; align-items: stretch; gap: 8px; width: 100%; padding: 10px; max-width: 760px; }
+.cmp .side {
+  flex: 1 1 0; min-width: 0; padding: 22px 6px; border: 3px solid #8ab8a8; border-radius: 10px;
+  background: rgba(0,0,0,0.18); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.cmp .side .e { font-size: clamp(20px, 6.4vw, 44px); white-space: nowrap; }
+.cmp .side .e .op { color: #ffd84a; margin: 0 0.12em; }
+.cmp .side .v { font-size: 18px; color: #ff8fb8; min-height: 1.3em; }
+.cmp .side.win { border-color: #ffd84a; background: rgba(255,216,74,0.15); }
+.cmp .vs { align-self: center; color: #b8d8c8; font-size: 18px; }
+.cmp-wrap { width: 100%; text-align: center; }
+
+/* 暗算リレー */
+.chain { width: 100%; text-align: center; padding: 10px; }
+.chain .lbl { font-size: 17px; color: #b8d8c8; min-height: 1.4em; }
+.chain .big { font-size: clamp(48px, 18vw, 110px); line-height: 1.25; min-height: 1.25em; color: #fff; }
+.chain .big.opstep { color: #ffd84a; }
+.chain .big .slot { font-size: 0.8em; }
+.chain .dots { margin-top: 6px; letter-spacing: 6px; color: #5a8a78; font-size: 14px; }
+.chain .dots .on { color: #ffd84a; }
+.trail { margin-top: 12px; font-size: 16px; line-height: 1.9; color: #e0eee8; }
+.trail span { display: inline-block; padding: 0 6px; margin: 2px; background: rgba(0,0,0,0.25); border-radius: 4px; }
+.trail span.res { color: #ff8fb8; }
+
+/* 100マス計算 */
+.grid {
+  display: grid; grid-template-columns: repeat(var(--n), var(--cs)); grid-auto-rows: var(--cs);
+  font-size: calc(var(--cs) * 0.5); line-height: 1; background: #0e1d1a; gap: 1px; border: 2px solid #0e1d1a;
+}
+.grid > div { display: flex; align-items: center; justify-content: center; background: #f4f1e4; color: #222; }
+.grid .h { background: #2c5a4c; color: #fff; }
+.grid .h.hl { background: #c89a2a; }
+.grid .corner { background: #183a32; color: #ffd84a; }
+.grid .cur { background: #ffe9a0; box-shadow: inset 0 0 0 2px #ff5a7a; color: #c02050; }
+.grid .ok { color: #1a4aa0; }
+.grid .ng { background: #ffd0d0; color: #c02020; }
+.grid .fix { background: #ffd0d0; color: #c02020; text-decoration: underline; }
+
+/* ---- テンキー ---- */
+#pad {
+  grid-area: pad; padding: 8px 10px 10px; background: #18213a; border-top: 2px solid #000;
+  touch-action: none;
+}
+#pad button {
+  border: 2px solid #4a5a8a; border-radius: 10px; background: #26325a; padding: 0;
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+#pad button.hit { background: #4a5a9a; border-color: #c8d4ff; transform: scale(0.96); }
+#pad.off button { opacity: 0.4; }
+.keys {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: clamp(46px, 7.5vh, 62px);
+  gap: 7px; max-width: 420px; margin: 0 auto;
+}
+.keys button { font-size: 28px; }
+.keys button.fn { font-size: 22px; background: #33284a; border-color: #6a4a7a; }
+.cmpkeys { display: none; grid-template-columns: 1fr 0.8fr 1fr; gap: 8px; max-width: 520px; margin: 0 auto; }
+.cmpkeys button { height: 84px; font-size: 15px; }
+.cmpkeys button b { display: block; font-weight: normal; font-size: 30px; line-height: 1.2; color: #ffd84a; }
+#pad.cmp .keys { display: none; }
+#pad.cmp .cmpkeys { display: grid; }
+#pad.hide { display: none; }
+
+/* 横持ちのスマホではテンキーを右に置く */
+@media (orientation: landscape) and (max-height: 520px) {
+  body {
+    grid-template-rows: auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "top top" "bar bar" "stage pad";
+  }
+  #top { padding: 3px 10px; }
+  #top button { width: 34px; height: 34px; }
+  #pad { border-top: none; border-left: 2px solid #000; display: flex; align-items: center; padding: 6px 10px; }
+  .keys { grid-template-columns: repeat(3, 58px); grid-auto-rows: minmax(0, 1fr); height: 100%; max-height: 300px; }
+  .keys button { font-size: 22px; }
+  .cmpkeys { grid-template-columns: 130px; grid-template-rows: repeat(3, minmax(0, 1fr)); height: 100%; }
+  .cmpkeys button { height: auto; }
+}
+
+/* ---- タイトル・結果などの画面 ---- */
+#overlay {
+  position: fixed; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5, 8, 18, 0.7);
+  padding: calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+    calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+  touch-action: manipulation;
+}
+#overlay.hidden { display: none; }
+.panel {
+  width: 100%; max-width: 480px; max-height: 100%; overflow: auto;
+  background: #1e2846; border: 3px double #e8ecff; border-radius: 6px;
+  padding: 16px 18px; box-shadow: 0 0 0 3px #000; text-align: center;
+  -webkit-user-select: none; user-select: none;
+}
+.panel h1 { margin: 0; font-size: 34px; font-weight: normal; color: #ffd84a; letter-spacing: 0.12em; text-shadow: 3px 3px 0 #6a2a2a; }
+.panel h2 { margin: 0 0 6px; font-size: 24px; font-weight: normal; color: #ffd84a; }
+.panel .sub { margin: 2px 0 8px; color: #a8b8e0; font-size: 14px; }
+.panel p { margin: 8px 0; font-size: 15px; line-height: 1.6; }
+.today { display: flex; justify-content: center; gap: 14px; font-size: 13px; color: #c8d0f0; margin: 4px 0 10px; flex-wrap: wrap; }
+.today b { font-weight: normal; color: #ffd84a; font-size: 17px; }
+.modes { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.modes button {
+  display: grid; grid-template-columns: 42px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
+  padding: 7px 10px; background: #26325a; border: 2px solid #4a5a8a; border-radius: 8px; text-align: left;
+}
+.modes button.on { background: #3a3a70; border-color: #ffd84a; }
+.modes .badge {
+  grid-row: 1 / 3; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; background: #1f3a34; color: #ffd84a; border: 2px solid #8ab8a8; border-radius: 6px;
+}
+.modes .nm { font-size: 17px; display: flex; justify-content: space-between; gap: 8px; }
+.modes .nm small { font-size: 12px; color: #ff8fb8; white-space: nowrap; align-self: center; }
+.modes .ds { font-size: 12px; color: #a8b8e0; line-height: 1.4; }
+.opt { margin: 10px 0 0; }
+.opt .lbl { display: block; font-size: 13px; color: #a8b8e0; margin-bottom: 4px; }
+.opt .row { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.opt button { padding: 6px 12px; font-size: 15px; background: #26325a; border: 2px solid #4a5a8a; border-radius: 6px; }
+.opt button.on { background: #3a6a50; border-color: #ffd84a; }
+.panel button.go {
+  margin: 12px 6px 4px; min-width: 160px; padding: 10px 18px; font-size: 19px;
+  background: #b83a4a; border: 2px solid #ffc8c8; border-radius: 6px;
+}
+.panel button.sub2 { margin: 6px; padding: 8px 14px; font-size: 15px; background: #26325a; border: 2px solid #4a5a8a; border-radius: 6px; }
+.panel .keys-help { font-size: 12px; color: #8898c0; margin: 6px 0; }
+.panel a { color: #a8c8ff; font-size: 13px; }
+.panel .big { font-size: 46px; color: #ffd84a; margin: 2px 0; line-height: 1.2; }
+.panel .big small { font-size: 20px; }
+.panel .rank { display: inline-block; margin: 4px 0 6px; padding: 4px 14px; border: 2px solid #ff8fb8; border-radius: 20px; color: #ff8fb8; font-size: 18px; }
+.panel .newrec { color: #ff6a5a; font-size: 18px; animation: blink 0.8s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.panel table { margin: 8px auto; border-collapse: collapse; font-size: 15px; }
+.panel td { padding: 3px 10px; }
+.panel td:first-child { color: #a8b8e0; text-align: right; }
+.panel td:last-child { text-align: left; }
+.panel .comment { color: #ffe9a0; font-size: 14px; }
+.panel .miss-list { font-size: 14px; color: #ffd0d0; margin: 6px 0; line-height: 1.7; }
+
+@media (max-height: 760px), (max-width: 480px) {
+  .panel { padding: 12px 12px; }
+  .panel h1 { font-size: 28px; }
+  .modes button { padding: 5px 8px; }
+  .modes .badge { width: 36px; height: 36px; font-size: 20px; }
+  .modes button { grid-template-columns: 36px 1fr; }
+  .modes .nm { font-size: 16px; }
+  .modes .ds { font-size: 11.5px; }
+  .opt { margin-top: 7px; }
+  .opt button { padding: 5px 10px; font-size: 14px; }
+  .panel button.go { margin-top: 8px; }
+}
