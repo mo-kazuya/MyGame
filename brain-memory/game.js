@@ -487,9 +487,7 @@
         if (G !== g || G.phase !== 'recall') return;
         if (b) b.classList.remove('hint');
         if (G.lives <= 0) { finish(); return; }
-        // 同じ長さで新しい順番に
-        G.seq = [];
-        for (let k = 0; k < G.len; k++) G.seq.push(seqRand(G.seq[k - 1]));
+        // 同じ順番をもう一度見せる（新しい順番にすると全部覚えなおしになって不利なので）
         playSeq();
       }, 1400);
     }
