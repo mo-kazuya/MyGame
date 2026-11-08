@@ -12,6 +12,8 @@
   const MODES = {
     words: { name: '単語おぼえ書き', badge: '語', desc: '並んだ単語を2分で覚えて、3分で思い出せるだけ書き出す。' },
     grid: { name: '数字マス記憶', badge: '升', desc: 'マスの数字と場所を覚えて、空になったマスを穴埋め。' },
+    seq: { name: '順番記憶', badge: '順', desc: '光ったマスの順番を覚えて、同じ順にタップ。成功するたび1つ長くなる。' },
+    spot: { name: 'なにが変わった？', badge: '変', desc: '並んだ絵を覚えて、増えた・消えた・入れ替わった場所を当てる。' },
     pair: { name: 'ペア記憶', badge: '対', desc: '「人と食べ物」などの組み合わせを覚えて、相手を選ぶ。' },
   };
   const DIFFS = { easy: { name: 'かんたん' }, normal: { name: 'ふつう' }, hard: { name: 'むずかしい' } };
@@ -32,13 +34,35 @@
       normal: { n: 8, memo: 90, reverse: false },
       hard: { n: 12, memo: 120, reverse: true },  // 逆向き（相手から元を当てる）の問題もまぜる
     },
+    // size：マスの数（size×size）、start：最初の長さ、flash／gap：1 マス光る時間と次までの間（ミリ秒）
+    seq: {
+      easy: { size: 2, start: 3, flash: 650, gap: 250, reverse: false },
+      normal: { size: 3, start: 3, flash: 550, gap: 200, reverse: false },
+      hard: { size: 3, start: 3, flash: 550, gap: 200, reverse: true },  // 光った順の逆から答える
+    },
+    // cols×rows のマスに items 個の絵。memo 秒見て、rounds 回くり返す
+    spot: {
+      easy: { cols: 3, rows: 3, items: 5, memo: 5, rounds: 10 },
+      normal: { cols: 4, rows: 4, items: 8, memo: 5, rounds: 10 },
+      hard: { cols: 5, rows: 4, items: 12, memo: 6, rounds: 10 },
+    },
   };
   const PAIR_CHOICES = 4;      // ペア記憶の選択肢の数
   const BREAK_MS = 1500;       // 覚える時間と思い出す時間のあいだの間（ま）
+  const SPOT_BREAK_MS = 900;   // なにが変わった？で絵をかくしておく時間
+  const SEQ_LIVES = 3;         // 順番記憶のライフ
+  const SEQ_TONES = [262, 330, 392, 523, 294, 349, 440, 494, 587];
+  // なにが変わった？で使う絵
+  const SPOT_ICONS = ['🍎', '🍌', '🍇', '🍓', '🍉', '🍒', '🍋', '🥕', '🌽', '🍄', '🐶', '🐱', '🐰', '🐻', '🐼', '🐸',
+    '🐧', '🐟', '🐢', '🦋', '🌸', '🌻', '🌙', '⭐', '🌈', '⚽', '🏀', '🎈', '🎁', '🔑', '📚', '⏰',
+    '🚗', '🚲', '🚀', '🏠', '🎸', '🎩', '👓', '🧦', '🍩', '🍙', '🍰', '🔔', '💎', '🌵', '🐙', '🦀'];
+  const SPOT_KINDS = { add: '増えた', remove: '消えた', change: '入れ替わった' };
 
   // 称号。数字は正解率（%）の目安
   const RANKS = ['たまご', 'ひよこ', '見習い', '一人前', '達人', '記憶名人'];
   const RANK_PCT = [0, 20, 40, 60, 80, 95];
+  // 順番記憶はつなげた長さで
+  const RANK_SEQ = { easy: [0, 4, 6, 8, 10, 13], normal: [0, 4, 6, 8, 10, 12], hard: [0, 3, 5, 6, 8, 10] };
 
   // ---- 保存（キーは memory. で始める） ----
   const store = {
@@ -170,24 +194,35 @@
     };
     if (o.mode === 'words') { G.words = makeWords(c.n); G.entries = []; }
     else if (o.mode === 'grid') { G.size = c.size; G.ans = makeGrid(c.size); G.inp = G.ans.map(() => 0); G.cur = 0; }
+    else if (o.mode === 'seq') { G.len = c.start; G.best = 0; G.lives = SEQ_LIVES; G.miss = 0; G.seq = []; G.showTok = 0; }
+    else if (o.mode === 'spot') { G.round = 0; G.correct = 0; G.results = []; }
     else { Object.assign(G, makePairs(c.n, c.reverse)); G.qi = 0; G.correct = 0; G.miss = 0; G.results = []; G.locked = false; }
     paused = false;
     hideOverlay();
     stage.classList.remove('paused');
     $pause.classList.add('hide');
-    setStats(['のこり', 'いま', o.mode === 'words' ? '単語' : o.mode === 'grid' ? 'マス' : '組']);
-    setVal(0, fmtSec(c.memo * 1000)); setVal(1, 'じゅんび');
-    setVal(2, o.mode === 'words' ? c.n : o.mode === 'grid' ? c.size * c.size : c.n);
-    $bar.classList.remove('hide', 'low');
+    if (o.mode === 'seq') {
+      setStats(['ライフ', 'ながさ', 'クリア']);
+      setVal(0, hearts(SEQ_LIVES)); setVal(1, c.start); setVal(2, 0);
+    } else if (o.mode === 'spot') {
+      setStats(['のこり', 'ラウンド', '正解']);
+      setVal(0, fmtSec(c.memo * 1000)); setVal(1, `0/${c.rounds}`); setVal(2, 0);
+    } else {
+      setStats(['のこり', 'いま', o.mode === 'words' ? '単語' : o.mode === 'grid' ? 'マス' : '組']);
+      setVal(0, fmtSec(c.memo * 1000)); setVal(1, 'じゅんび');
+      setVal(2, o.mode === 'words' ? c.n : o.mode === 'grid' ? c.size * c.size : c.n);
+    }
+    $bar.classList.toggle('hide', o.mode === 'seq');
+    $bar.classList.remove('low');
     barFill.style.transform = 'scaleX(1)';
     const tok = ++countToken;
-    const seq = ['3', '2', '1', 'おぼえて！'];
+    const seq = ['3', '2', '1', o.mode === 'seq' ? 'スタート！' : 'おぼえて！'];
     seq.forEach((s, i) => setTimeout(() => {
       if (tok !== countToken) return;
       stageHtml(`<div class="count ${i === 3 ? 'go' : ''}">${s}</div>`);
       i === 3 ? sfx.go() : sfx.count();
     }, i * 650));
-    setTimeout(() => { if (tok === countToken) beginMemo(); }, seq.length * 650);
+    setTimeout(() => { if (tok === countToken) (o.mode === 'seq' ? beginSeq : beginMemo)(); }, seq.length * 650);
   }
 
   function enterPhase(phase, limitSec) {
@@ -200,6 +235,7 @@
 
   // ---- 覚える時間 ----
   function beginMemo() {
+    if (G.mode === 'spot') { spotMemo(); return; }
     enterPhase('memo', G.c.memo);
     setVal(1, '覚える');
     const done = '<button class="act" data-act="memodone">覚えた！ 思い出す画面へ</button>';
@@ -221,10 +257,20 @@
     G.memoUsed = Math.min(elapsed(), G.limit);
     G.phase = 'break';
     $pause.classList.add('hide');
+    const tok = ++countToken;
+    if (G.mode === 'spot') {
+      // 絵をいったんかくす（かくさないと、変わったところが動きで見えてしまう）
+      sfx.key();
+      setVal(0, '-');
+      $bar.classList.add('hide');
+      stageHtml(`${spotHtml(() => '', false, true)}`);
+      fitBoard();
+      setTimeout(() => { if (tok === countToken && G && G.phase === 'break') spotRecall(); }, SPOT_BREAK_MS);
+      return;
+    }
     sfx.phase();
     setVal(1, '');
     stageHtml(`<div class="breakmsg">${G.mode === 'pair' ? 'では、問題です' : 'では、思い出してみよう'}</div>`);
-    const tok = ++countToken;
     setTimeout(() => { if (tok === countToken && G && G.phase === 'break') beginRecall(); }, BREAK_MS);
   }
 
@@ -368,6 +414,163 @@
     setTimeout(() => { if (G === g && G.phase === 'recall') { G.qi++; nextPairQ(); } }, ok ? 650 : 1300);
   }
 
+  // ---- 順番記憶 ----
+  const hearts = n => '♥\uFE0E'.repeat(Math.max(0, n)) + '♡\uFE0E'.repeat(Math.max(0, SEQ_LIVES - n));
+  function seqRand(prev) {
+    const n = G.c.size * G.c.size;
+    let v;
+    do { v = ri(0, n - 1); } while (v === prev);  // 同じマスが続かないように
+    return v;
+  }
+  function beginSeq() {
+    enterPhase('recall', 0);
+    const n = G.c.size;
+    stageHtml(`<p class="guide" id="sguide"></p>
+      <div class="spad" id="spad" style="--n:${n}">${Array.from({ length: n * n }, (_, i) => `<button data-sp="${i}" class="c${i}"></button>`).join('')}</div>
+      <p class="note">${G.c.reverse ? '光った順番の<b>逆から</b>タップ！' : '光った順番どおりにタップ'}</p>`);
+    fitBoard();
+    G.seq = [];
+    for (let i = 0; i < G.len; i++) G.seq.push(seqRand(G.seq[i - 1]));
+    playSeq();
+  }
+  function seqLight(i, ms) {
+    const b = stage.querySelector(`[data-sp="${i}"]`); if (!b) return;
+    b.classList.add('lit');
+    tone(SEQ_TONES[i], ms / 1000, 'triangle', 0.08);
+    setTimeout(() => b.classList.remove('lit'), ms);
+  }
+  function playSeq() {
+    G.showing = true; G.pos = 0; G.locked = true;
+    const tok = ++G.showTok, g = G, c = G.c;
+    const live = () => G === g && tok === G.showTok && !paused && G.phase === 'recall';
+    const guide = $('sguide');
+    if (guide) guide.textContent = `よく見て…（${G.seq.length} 個）`;
+    $('spad') && $('spad').classList.add('watch');
+    G.seq.forEach((v, k) => setTimeout(() => { if (live()) seqLight(v, c.flash); }, 700 + k * (c.flash + c.gap)));
+    setTimeout(() => {
+      if (!live()) return;
+      G.showing = false; G.locked = false;
+      $('spad') && $('spad').classList.remove('watch');
+      if (guide) guide.textContent = c.reverse ? 'あなたの番！ 逆の順に' : 'あなたの番！';
+    }, 700 + G.seq.length * (c.flash + c.gap));
+  }
+  function tapSeq(i) {
+    if (!G || G.mode !== 'seq' || G.phase !== 'recall' || G.locked || paused) return;
+    if (i < 0 || i >= G.c.size * G.c.size) return;
+    const L = G.seq.length;
+    const want = G.c.reverse ? G.seq[L - 1 - G.pos] : G.seq[G.pos];
+    const g = G;
+    if (i === want) {
+      seqLight(i, 220);
+      G.pos++;
+      if (G.pos < L) return;
+      // ぜんぶ合っていた
+      G.locked = true;
+      G.best = Math.max(G.best, L);
+      setVal(2, G.best);
+      showMark(true); sfx.ok();
+      setTimeout(() => {
+        if (G !== g || G.phase !== 'recall') return;
+        G.len++; G.seq.push(seqRand(G.seq[L - 1]));
+        setVal(1, G.len);
+        playSeq();
+      }, 900);
+    } else {
+      G.locked = true;
+      G.lives--; G.miss++;
+      setVal(0, hearts(G.lives));
+      showMark(false); sfx.ng();
+      const b = stage.querySelector(`[data-sp="${want}"]`);
+      if (b) b.classList.add('hint');
+      shake($('spad'));
+      setTimeout(() => {
+        if (G !== g || G.phase !== 'recall') return;
+        if (b) b.classList.remove('hint');
+        if (G.lives <= 0) { finish(); return; }
+        // 同じ長さで新しい順番に
+        G.seq = [];
+        for (let k = 0; k < G.len; k++) G.seq.push(seqRand(G.seq[k - 1]));
+        playSeq();
+      }, 1400);
+    }
+  }
+
+  // ---- なにが変わった？ ----
+  function spotHtml(cell, input, masked) {
+    const c = G.c;
+    let h = `<div class="sboard${input ? ' input' : ''}${masked ? ' masked' : ''}" id="sboard" style="--cols:${c.cols};--rows:${c.rows}">`;
+    for (let i = 0; i < c.cols * c.rows; i++) h += input ? `<button data-spot="${i}">${cell(i)}</button>` : `<div>${cell(i)}</div>`;
+    return h + '</div>';
+  }
+  function spotMemo() {
+    const c = G.c, n = c.cols * c.rows;
+    G.round++;
+    // 新しい盤面：items 個の絵をばらばらの場所に置く
+    const icons = shuffle(SPOT_ICONS.slice());
+    const cells = shuffle([...Array(n).keys()]).slice(0, c.items);
+    G.board = Array(n).fill('');
+    cells.forEach((p, k) => { G.board[p] = icons[k]; });
+    G.spare = icons.slice(c.items);
+    enterPhase('memo', c.memo);
+    setVal(1, `${G.round}/${c.rounds}`);
+    stageHtml(`<p class="guide">絵と場所を覚えよう</p>${spotHtml(i => G.board[i])}
+      <button class="act" data-act="memodone">覚えた！</button>`);
+    fitBoard();
+  }
+  function spotRecall() {
+    const filled = [], empty = [];
+    G.board.forEach((v, i) => (v ? filled : empty).push(i));
+    const kinds = ['remove', 'change'];
+    if (empty.length) kinds.push('add');
+    const kind = pick(kinds);
+    const after = G.board.slice();
+    let idx;
+    if (kind === 'add') { idx = pick(empty); after[idx] = G.spare[0]; }
+    else if (kind === 'remove') { idx = pick(filled); after[idx] = ''; }
+    else { idx = pick(filled); after[idx] = G.spare[1]; }
+    G.change = { kind, idx, before: G.board[idx], after: after[idx] };
+    G.after = after;
+    enterPhase('recall', 0);
+    setVal(0, '-');
+    G.locked = false;
+    stageHtml(`<p class="guide">どこが変わった？ 変わったマスをタップ</p>${spotHtml(i => after[i], true)}`);
+    fitBoard();
+  }
+  function tapSpot(i) {
+    if (!G || G.mode !== 'spot' || G.phase !== 'recall' || G.locked || paused) return;
+    G.locked = true;
+    const ch = G.change, ok = i === ch.idx;
+    G.results.push({ kind: ch.kind, ok });
+    if (ok) { G.correct++; sfx.ok(); } else sfx.ng();
+    setVal(2, G.correct);
+    showMark(ok);
+    const cells = stage.querySelectorAll('#sboard > button');
+    if (!ok && cells[i]) cells[i].classList.add('ng');
+    if (cells[ch.idx]) cells[ch.idx].classList.add('ans');
+    const desc = ch.kind === 'add' ? `${ch.after} が増えた`
+      : ch.kind === 'remove' ? `${ch.before} が消えた` : `${ch.before} → ${ch.after} に入れ替わった`;
+    const guide = stage.querySelector('.guide');
+    if (guide) guide.innerHTML = `<span class="${ok ? 'okmsg' : 'ngmsg'}">${ok ? '正解！' : 'ざんねん'}</span> ${esc(desc)}`;
+    const g = G;
+    setTimeout(() => {
+      if (G !== g || G.phase !== 'recall') return;
+      if (G.round >= G.c.rounds) finish(); else spotMemo();
+    }, ok ? 1100 : 2000);
+  }
+
+  // マス（順番記憶・なにが変わった？）の大きさを画面に合わせる
+  function fitBoard() {
+    if (!G) return;
+    const el = $('spad') || $('sboard'); if (!el) return;
+    const r = stage.getBoundingClientRect();
+    const cols = G.mode === 'seq' ? G.c.size : G.c.cols, rows = G.mode === 'seq' ? G.c.size : G.c.rows;
+    const seq = G.mode === 'seq', gap = seq ? 10 : 6;
+    const reserve = seq ? 130 : 150, max = seq ? 150 : 100;
+    const cs = Math.floor(Math.max(40, Math.min(max,
+      (r.width - 36 - gap * (cols - 1)) / cols, (r.height - reserve - gap * (rows - 1)) / rows)));
+    el.style.setProperty('--cs', cs + 'px');
+  }
+
   function showMark(ok) {
     const m = document.createElement('div');
     m.className = 'mark show' + (ok ? '' : ' ng');
@@ -382,6 +585,7 @@
     if (!G || (G.phase !== 'memo' && G.phase !== 'recall') || paused) return;
     paused = true; G.pausedAt = now();
     stage.classList.add('paused');
+    if (G.mode === 'seq' && G.showing) G.showTok++;  // 見せている途中なら、つづけるときに最初から見せ直す
     if (document.activeElement) document.activeElement.blur();
     showPanel(`<h2>ポーズ中</h2>
       <p>${MODES[G.mode].name}</p>
@@ -396,6 +600,10 @@
     stage.classList.remove('paused');
     hideOverlay();
     const inp = $('win'); if (inp) inp.focus();
+    if (G.mode === 'seq' && G.showing) {
+      stage.querySelectorAll('.spad .lit').forEach(b => b.classList.remove('lit'));
+      playSeq();
+    }
   }
   $pause.addEventListener('click', pause);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
@@ -406,7 +614,7 @@
     if (!G || paused || (G.phase !== 'memo' && G.phase !== 'recall') || !G.limit) return;
     const left = G.limit - elapsed();
     const sec = Math.ceil(left / 1000);
-    const low = sec <= 10;
+    const low = sec <= 10 && G.limit > 20000;  // 短い時間（なにが変わった？）では急かさない
     setVal(0, fmtSec(left), low ? 'low' : '');
     barFill.style.transform = `scaleX(${Math.max(0, left / G.limit)})`;
     $bar.classList.toggle('low', low);
@@ -418,6 +626,7 @@
 
   // ---- 結果 ----
   function rankIndex(pct) { let r = 0; RANK_PCT.forEach((x, i) => { if (pct >= x) r = i; }); return r; }
+  function rankSeq(diff, v) { let r = 0; RANK_SEQ[diff].forEach((x, i) => { if (v >= x) r = i; }); return r; }
   function finish() {
     if (!G || G.phase !== 'recall') return;
     const recallMs = elapsed();
@@ -446,6 +655,15 @@
         return `<div class="ng"><s>${g}</s><b>${v}</b></div>`;
       }).join('')}</div>
         <p class="legend"><span class="ok">正解</span> <span class="ng">まちがい（右下が正しい数）</span> <span class="blank">空らん</span></p>`;
+    } else if (o.mode === 'seq') {
+      value = G.best; total = 0;
+      rows = [['順番', G.c.reverse ? '逆から' : 'そのまま'], ['マス', `${G.c.size}×${G.c.size}`]];
+    } else if (o.mode === 'spot') {
+      value = G.correct; total = G.c.rounds;
+      rows = Object.entries(SPOT_KINDS).map(([k, name]) => {
+        const rs = G.results.filter(x => x.kind === k);
+        return [name, rs.length ? `${rs.filter(x => x.ok).length} / ${rs.length}` : '-'];
+      });
     } else {
       total = G.qs.length; value = G.correct;
       rows = [['テーマ', esc(G.theme.name)]];
@@ -455,27 +673,28 @@
       }).join('')}</div>`;
     }
     const pct = total ? Math.round(value / total * 100) : 0;
-    rows.unshift(['正解率', `${pct}%`]);
-    rows.push(['覚えた時間', `${fmtSec(G.memoUsed)}（${fmtSec(G.c.memo * 1000)} 中）`]);
-    if (o.mode !== 'pair') rows.push(['思い出した時間', `${fmtSec(Math.min(recallMs, G.limit))}`]);
+    if (total) rows.unshift(['正解率', `${pct}%`]);
+    if (o.mode === 'words' || o.mode === 'grid' || o.mode === 'pair') rows.push(['覚えた時間', `${fmtSec(G.memoUsed)}（${fmtSec(G.c.memo * 1000)} 中）`]);
+    if (o.mode === 'words' || o.mode === 'grid') rows.push(['思い出した時間', `${fmtSec(Math.min(recallMs, G.limit))}`]);
     rows.push(['難しさ', DIFFS[o.diff].name]);
     const prev = getBest(o);
     const isRec = value > prev;
     if (isRec) store.set(bestKey(o), value);
     recordDay(value);
-    const r = rankIndex(pct);
+    const r = o.mode === 'seq' ? rankSeq(o.diff, value) : rankIndex(pct);
     isRec ? sfx.rec() : sfx.end();
-    const next = r >= RANKS.length - 1 ? '最高の称号です！'
-      : `「${RANKS[r + 1]}」まで あと ${Math.max(1, Math.ceil(total * RANK_PCT[r + 1] / 100) - value)} 個`;
+    const need = o.mode === 'seq' ? RANK_SEQ[o.diff][r + 1] - value : Math.ceil(total * RANK_PCT[r + 1] / 100) - value;
+    const next = r >= RANKS.length - 1 ? '最高の称号です！' : `「${RANKS[r + 1]}」まで あと ${Math.max(1, need)} 個`;
+    const unit = v => total ? `${v} / ${total}` : `${v} 個`;
     stageHtml('');
     showPanel(`<h2>${MODES[o.mode].name}</h2>
-      <div class="big">${value}<small> / ${total}</small></div>
+      <div class="big">${value}<small>${total ? ` / ${total}` : ' 個 つなげた'}</small></div>
       ${isRec ? '<div class="newrec">★ 自己ベスト更新！ ★</div>' : ''}
       <div class="rank">称号：${RANKS[r]}</div>
       <p class="comment">${next}</p>
       ${detail}
       <table>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}
-        <tr><td>自己ベスト</td><td>${Math.max(prev, value)} / ${total}</td></tr></table>
+        <tr><td>自己ベスト</td><td>${unit(Math.max(prev, value))}</td></tr></table>
       <button class="go" data-act="retry">もう一度</button><br>
       <button class="sub2" data-act="title">モードをえらぶ</button>`);
   }
@@ -492,6 +711,8 @@
     const c = CONF[mode][diff];
     if (mode === 'words') return `単語 ${c.n} 個・覚える ${c.memo / 60} 分・書き出す ${c.recall / 60} 分`;
     if (mode === 'grid') return `${c.size}×${c.size} マス・覚える ${c.memo} 秒・穴埋め ${c.recall} 秒`;
+    if (mode === 'seq') return `${c.size}×${c.size} マス・${c.start} 個から・ライフ ${SEQ_LIVES}${c.reverse ? '・逆の順に答える' : ''}`;
+    if (mode === 'spot') return `${c.cols}×${c.rows} マスに絵 ${c.items} 個・見る ${c.memo} 秒・${c.rounds} 回`;
     return `${c.n} 組・覚える ${c.memo} 秒・${PAIR_CHOICES} 択${c.reverse ? '（逆向きの問題もあり）' : ''}`;
   }
   function showTitle() {
@@ -503,20 +724,21 @@
     setStats(['のこり', 'いま', '数']); [0, 1, 2].forEach(i => setVal(i, '-'));
     $bar.classList.add('hide');
     const d = daily();
-    const total = o => o.mode === 'words' ? CONF.words[o.diff].n : o.mode === 'grid' ? CONF.grid[o.diff].size ** 2 : CONF.pair[o.diff].n;
+    const total = o => o.mode === 'words' ? CONF.words[o.diff].n : o.mode === 'grid' ? CONF.grid[o.diff].size ** 2
+      : o.mode === 'spot' ? CONF.spot[o.diff].rounds : CONF.pair[o.diff].n;
     showPanel(`<h1>記憶道場</h1>
       <p class="sub">覚えて、思い出す。毎日の記憶トレーニング</p>
       <div class="today"><span>連続 <b>${d.streak}</b> 日</span><span>今日おぼえた <b>${d.count}</b> 個</span><span>これまで <b>${d.total}</b> 個</span></div>
       <div class="modes">${Object.entries(MODES).map(([k, m]) => {
         const o = { mode: k, diff: opts.diff }, b = getBest(o);
         return `<button data-mode="${k}" class="${opts.mode === k ? 'on' : ''}"><span class="badge">${m.badge}</span>
-          <span class="nm">${m.name}<small>${b ? `ベスト ${b}/${total(o)}` : ''}</small></span><span class="ds">${m.desc}</span></button>`;
+          <span class="nm">${m.name}<small>${b ? (k === 'seq' ? `ベスト ${b}個` : `ベスト ${b}/${total(o)}`) : ''}</small></span><span class="ds">${m.desc}</span></button>`;
       }).join('')}</div>
       <div class="opt"><span class="lbl">難しさ</span><div class="row">${Object.entries(DIFFS).map(([k, v]) =>
         `<button data-opt="diff" data-v="${k}" class="${opts.diff === k ? 'on' : ''}">${v.name}</button>`).join('')}</div>
         <span class="conf">${confText(opts.mode, opts.diff)}</span></div>
       <button class="go" data-act="start">スタート</button>
-      <p class="keys-help">覚え終わったら「覚えた！」で早めに進めます。<br>PC：Esc でポーズ／数字マスは数字キー・矢印キー・Backspace／ペア記憶は 1〜4 キー</p>
+      <p class="keys-help">覚え終わったら「覚えた！」で早めに進めます。<br>PC：Esc でポーズ／数字マスは数字キー・矢印キー・Backspace／順番記憶は 1〜9 キー（左上から）／ペア記憶は 1〜4 キー</p>
       <a href="../index.html">← ゲーム一覧へ</a>`);
   }
 
@@ -545,6 +767,8 @@
     } else if (d.cell !== undefined) { G.cur = +d.cell; sfx.key(); drawGridInput(); }
     else if (d.num !== undefined) gridNum(+d.num);
     else if (d.choice !== undefined) choosePair(+d.choice);
+    else if (d.sp !== undefined) tapSeq(+d.sp);
+    else if (d.spot !== undefined) tapSpot(+d.spot);
   });
 
   document.addEventListener('keydown', e => {
@@ -571,10 +795,13 @@
       e.preventDefault();
     } else if (G.mode === 'pair' && G.phase === 'recall' && /^[1-9]$/.test(e.key)) {
       choosePair(+e.key - 1);
+    } else if (G.mode === 'seq' && /^[1-9]$/.test(e.key)) {
+      tapSeq(+e.key - 1);
     }
   });
   window.addEventListener('resize', () => {
     if (G && G.mode === 'grid' && (G.phase === 'memo' || G.phase === 'recall')) fitGrid(G.phase === 'recall');
+    if (G && (G.mode === 'seq' || G.mode === 'spot')) fitBoard();
   });
 
   showTitle();
