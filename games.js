@@ -52,4 +52,12 @@ const GAMES = [
     tags: ['PC', 'スマホ', '手書き入力', '記録保存'],
     thumb: 'thumb.png',
   },
+  {
+    dir: 'brain-memory',
+    title: '記憶道場',
+    genre: '脳トレ（記憶）',
+    desc: '単語の書き出し・5×5マスの数字の穴埋め・光る順番・どこが変わった？・ペア記憶。5つのモードで記憶力をきたえよう。',
+    tags: ['PC', 'スマホ', '記録保存'],
+    thumb: 'thumb.png',
+  },
 ];
