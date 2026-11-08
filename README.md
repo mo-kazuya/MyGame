@@ -13,6 +13,7 @@
 | [`tank-defense/`](tank-defense/) | [鉄壁の砲台](tank-defense/README.md) | タワーディフェンス |
 | [`snake/`](snake/) | [くねくねスネーク](snake/README.md) | スネークゲーム |
 | [`brain-calc/`](brain-calc/) | [計算道場](brain-calc/README.md) | 脳トレ（計算） |
+| [`brain-memory/`](brain-memory/) | [記憶道場](brain-memory/README.md) | 脳トレ（記憶） |
 
 ## 構成
 
@@ -25,6 +26,7 @@ airport-controller/  エアポート管制官
 tank-defense/        鉄壁の砲台
 snake/               くねくねスネーク
 brain-calc/          計算道場
+brain-memory/        記憶道場
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。
