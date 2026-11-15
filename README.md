@@ -14,6 +14,7 @@
 | [`snake/`](snake/) | [くねくねスネーク](snake/README.md) | スネークゲーム |
 | [`brain-calc/`](brain-calc/) | [計算道場](brain-calc/README.md) | 脳トレ（計算） |
 | [`brain-memory/`](brain-memory/) | [記憶道場](brain-memory/README.md) | 脳トレ（記憶） |
+| [`ashen-depths/`](ashen-depths/) | [灰の迷宮](ashen-depths/README.md) | ローグライク（ローグ風） |
 
 ## 構成
 
@@ -27,6 +28,7 @@ tank-defense/        鉄壁の砲台
 snake/               くねくねスネーク
 brain-calc/          計算道場
 brain-memory/        記憶道場
+ashen-depths/        灰の迷宮
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。
