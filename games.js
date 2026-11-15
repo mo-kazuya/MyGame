@@ -60,4 +60,13 @@ const GAMES = [
     tags: ['PC', 'スマホ', '記録保存'],
     thumb: 'thumb.png',
   },
+  {
+    dir: 'ashen-depths',
+    title: '灰の迷宮',
+    genre: 'ローグライク',
+    inspired: 'ローグ（1985 PC-9801版）',
+    desc: '入るたびに形が変わる迷宮。正体不明の薬や巻物、空腹、26種の怪物。地下26階の秘宝「灰炎の心臓」を地上へ持ち帰れ。',
+    tags: ['PC', 'キーボード', 'セーブ対応'],
+    thumb: 'thumb.png',
+  },
 ];
