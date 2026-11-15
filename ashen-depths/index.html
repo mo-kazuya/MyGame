@@ -42,13 +42,55 @@ table.fame td,table.fame th{padding:4px 6px;border-bottom:1px solid var(--line);
 table.fame td.n{text-align:right;font-variant-numeric:tabular-nums}
 .stone{text-align:center;line-height:1.8}
 .stone .rip{font-size:30px;letter-spacing:.3em;color:#cfc6b8}
+#view{display:block;width:100%;height:auto;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:manipulation}
+#prompt{display:none;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0 6px}
+#prompt.on{display:flex}
+#prompt span{color:var(--key);font-size:14px}
+#prompt button{padding:6px 14px}
+#touch{display:none}
+body.touch #touch{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding-top:8px;user-select:none;-webkit-user-select:none}
+body.touch #hint{display:none}
+body.touch #msg{font-size:13px;min-height:3.9em;line-height:1.3em}
+body.touch #status{font-size:13px;gap:2px 12px;padding-top:6px}
+body.touch #app{padding:6px 10px 10px}
+#pad{display:grid;grid-template-columns:repeat(3,58px);grid-template-rows:repeat(3,58px);gap:5px;flex:none}
+#acts{display:grid;grid-template-columns:repeat(2,minmax(66px,84px));gap:6px}
+#touch button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#pad button{font-size:22px;padding:0;border-radius:10px;background:#251f1a}
+#pad button:active,#acts button:active{background:#3a2f26}
+#pad button.mid{font-size:13px;color:var(--dim)}
+#acts button{padding:9px 4px;font-size:14px;border-radius:8px}
+#acts button.on{border-color:var(--accent);color:var(--accent);background:#3a2c18}
+body.touch.land #app{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"pad main acts";gap:10px;align-items:center;max-width:none}
+body.touch.land #touch{display:contents}
+body.touch.land #pad{grid-area:pad}
+body.touch.land #acts{grid-area:acts;grid-template-columns:repeat(2,76px)}
+body.touch.land #acts button{font-size:13px;padding:8px 2px;white-space:nowrap}
+body.touch.land #main{grid-area:main;min-width:0}
+.panel .close{margin-top:12px}
 </style>
 </head>
 <body>
 <div id="app">
+ <div id="main">
   <div id="msg"></div>
-  <div id="wrap"><canvas id="cv"></canvas></div>
+  <div id="prompt"></div>
+  <div id="wrap"><canvas id="view"></canvas></div>
   <div id="status"></div>
+ </div>
+  <div id="touch">
+    <div id="pad">
+      <button data-d="-1,-1">↖</button><button data-d="0,-1">↑</button><button data-d="1,-1">↗</button>
+      <button data-d="-1,0">←</button><button data-d="0,0" class="mid">休む</button><button data-d="1,0">→</button>
+      <button data-d="-1,1">↙</button><button data-d="0,1">↓</button><button data-d="1,1">↘</button>
+    </div>
+    <div id="acts">
+      <button id="tRun">走る</button><button data-k="s">探す</button>
+      <button id="tStairs">階段</button><button data-k="i">持ち物</button>
+      <button id="tMap">全体地図</button><button data-k="a">繰り返す</button>
+      <button id="tLog">履歴</button><button id="tMenu">コマンド</button>
+    </div>
+  </div>
   <div id="hint"><kbd>?</kbd> 操作一覧　<kbd>i</kbd> 持ち物　<kbd>/</kbd> 図鑑　移動: 方向キー / テンキー / <kbd>h</kbd><kbd>j</kbd><kbd>k</kbd><kbd>l</kbd><kbd>y</kbd><kbd>u</kbd><kbd>b</kbd><kbd>n</kbd>（Shiftで走る）</div>
 </div>
 <div id="overlay"></div>
@@ -324,8 +366,25 @@ mkTiles();
 
 // ===================== 状態 =====================
 let G=null,P=null,mode='title',lastKey=null,overlayKey=null;
-const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const cv=document.createElement('canvas'),ctx=cv.getContext('2d');
 cv.width=W*TS;cv.height=H*TS;
+const view=document.getElementById('view'),vctx=view.getContext('2d');
+let VW=W,VH=H,camX=0,camY=0,fullMap=false,runNext=false;
+const isTouch=()=>window.matchMedia('(pointer:coarse)').matches||window.innerWidth<760;
+function layout(){
+  const touch=isTouch(),land=touch&&window.innerWidth>window.innerHeight;
+  document.body.classList.toggle('touch',touch);document.body.classList.toggle('land',land);
+  if(!touch||fullMap){VW=W;VH=H;}
+  else{
+    const main=document.getElementById('main');
+    const w=Math.max(200,main.clientWidth||window.innerWidth-20);
+    VW=Math.max(15,Math.min(W,Math.round(w/(land?16:15))));
+    const tile=w/VW;
+    const reserved=land?120:(document.getElementById('touch').offsetHeight+150);
+    VH=Math.max(9,Math.min(H,Math.floor((window.innerHeight-reserved)/tile)));
+  }
+  if(view.width!==VW*TS||view.height!==VH*TS){view.width=VW*TS;view.height=VH*TS;}
+}
 const $msg=document.getElementById('msg'),$status=document.getElementById('status'),$ov=document.getElementById('overlay');
 
 function msg(s){if(!G)return;G.msgs.push(s);G.hist.push(s);if(G.hist.length>80)G.hist.shift();}
@@ -597,7 +656,20 @@ function render(){
   }
   ctx.drawImage(spr('hero'),P.x*TS,P.y*TS);
   for(const[x,y,c]of G.fx){ctx.fillStyle=c;ctx.globalAlpha=.75;ctx.fillRect(x*TS+2,y*TS+2,TS-4,TS-4);ctx.globalAlpha=1;}
-  drawStatus();drawMsgs();
+  layout();
+  camX=Math.max(0,Math.min(W-VW,P.x-(VW>>1)));camY=Math.max(0,Math.min(H-VH,P.y-(VH>>1)));
+  vctx.imageSmoothingEnabled=false;vctx.fillStyle='#000';vctx.fillRect(0,0,view.width,view.height);
+  vctx.drawImage(cv,camX*TS,camY*TS,VW*TS,VH*TS,0,0,VW*TS,VH*TS);
+  drawStatus();drawMsgs();drawPrompt();
+}
+function drawPrompt(){
+  const el=document.getElementById('prompt');
+  if(mode==='dir'){el.innerHTML='<span>方向を選んでください（矢印ボタン・マップをタップ）</span><button data-k="Escape">やめる</button>';el.classList.add('on');}
+  else if(mode==='choice'&&G.choice){
+    el.innerHTML=Object.entries(G.choice.labels||{}).map(([k,l])=>`<button data-k="${k}">${esc(l)}</button>`).join('')+'<button data-k="Escape">やめる</button>';
+    el.classList.add('on');
+  }else{el.classList.remove('on');el.innerHTML='';}
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>press(b.dataset.k));
 }
 function drawMsgs(){
   const a=G.msgs.slice(-4);
@@ -1021,7 +1093,7 @@ function cmdPutOn(){
       msg(`${itemName(it)}を${hand==='L'?'左':'右'}手にはめた`);endTurn();
     };
     if(P.ringL)done('R');else if(P.ringR)done('L');
-    else askChoice('どちらの手にはめますか？ (L:左 / R:右)',{l:'L',r:'R'},done);
+    else askChoice('どちらの手にはめますか？ (L:左 / R:右)',{l:'L',r:'R'},done,{l:'左手',r:'右手'});
   });
 }
 function cmdRemove(){
@@ -1032,7 +1104,7 @@ function cmdRemove(){
     if(r.cursed){msg('呪われていて外れない！');noTime();return;}
     if(hand==='L')P.ringL=null;else P.ringR=null;msg(`${itemName(r)}を外した`);endTurn();
   };
-  if(P.ringL&&P.ringR)askChoice('どちらの手の指輪を外しますか？ (L:左 / R:右)',{l:'L',r:'R'},done);
+  if(P.ringL&&P.ringR)askChoice('どちらの手の指輪を外しますか？ (L:左 / R:右)',{l:'L',r:'R'},done,{l:'左手',r:'右手'});
   else done(P.ringL?'L':'R');
 }
 function cmdDrop(){
@@ -1173,29 +1245,36 @@ function selectItem(verb,filter,cb,onCancel){
   if(!list.length){startCmd();msg(`${verb}ものを持っていない`);noTime();if(onCancel)onCancel();return;}
   const rows=list.map(({it,i})=>`<div class="row" data-i="${i}"><b>${String.fromCharCode(97+i)})</b><img src="${sprURL(itemSprite(it))}" alt="">${esc(itemName(it))}<span style="color:var(--dim)">${equipTag(it)}</span></div>`).join('');
   const pick=i=>{const o=list.find(x=>x.i===i);if(!o)return;closeOverlay();cb(o.it);};
-  openOverlay(`<div class="panel"><h2>どれを${esc(verb)}？</h2>${rows}<div class="foot">記号のキーを押すか、クリックで選択　Esc: やめる</div></div>`,e=>{
-    if(e.key==='Escape'){closeOverlay();if(onCancel)onCancel();else noTime();return;}
+  const cancel=()=>{closeOverlay();if(onCancel)onCancel();else noTime();};
+  openOverlay(`<div class="panel"><h2>どれを${esc(verb)}？</h2>${rows}<div class="foot">記号のキーを押すか、タップで選択　Esc: やめる</div><button class="close">やめる</button></div>`,e=>{
+    if(e.key==='Escape'){cancel();return;}
     if(/^[a-w]$/.test(e.key))pick(e.key.charCodeAt(0)-97);
   });
+  $ov.onclick=null;
   $ov.querySelectorAll('.row').forEach(r=>r.onclick=()=>pick(+r.dataset.i));
+  $ov.querySelector('.close').onclick=cancel;
 }
 function showInfo(title,html,after){
-  openOverlay(`<div class="panel"><h2>${title}</h2>${html}<div class="foot">何かキーを押すと閉じます</div></div>`,e=>{
-    if(['Shift','Control','Alt','Meta'].includes(e.key))return;closeOverlay();if(after)after();});
-  $ov.onclick=e=>{if(e.target===$ov&&overlayKey){closeOverlay();if(after)after();}};
+  const close=()=>{closeOverlay();if(after)after();};
+  openOverlay(`<div class="panel"><h2>${title}</h2>${html}<div class="foot">何かキーを押すと閉じます</div><button class="close">閉じる</button></div>`,e=>{
+    if(['Shift','Control','Alt','Meta'].includes(e.key))return;close();});
+  $ov.onclick=e=>{if(e.target===$ov&&overlayKey)close();};
+  $ov.querySelector('.close').onclick=close;
 }
 function askDir(allowRunKeys,cb){
-  startCmd();msg('方向を選んでください（Escでやめる）');render();
-  mode='dir';G.dirCb=cb;
+  startCmd();msg('方向を選んでください（Escでやめる）');
+  mode='dir';G.dirCb=cb;render();
 }
-function askChoice(text,map,cb){
-  msg(text);render();mode='choice';G.choice={map,cb};
+function askChoice(text,map,cb,labels){
+  msg(text);mode='choice';G.choice={map,cb,labels};render();
 }
-function askYN(text,cb){askChoice(text,{y:true,n:false},cb);}
+function askYN(text,cb){askChoice(text,{y:true,n:false},cb,{y:'はい',n:'いいえ'});}
 function askText(label,def,cb){
-  openOverlay(`<div class="panel"><h2>${esc(label)}</h2><input type="text" id="ti" maxlength="20" value="${esc(def)}"><div class="foot">Enter: 決定　Esc: やめる</div></div>`,null);
-  mode='text';const el=document.getElementById('ti');el.focus();el.select();
-  el.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter'){const v=el.value;closeOverlay();cb(v);}else if(e.key==='Escape'){closeOverlay();noTime();}};
+  openOverlay(`<div class="panel"><h2>${esc(label)}</h2><input type="text" id="ti" maxlength="20" value="${esc(def)}"><div class="foot">Enter: 決定　Esc: やめる</div><div class="btns" style="display:flex;gap:8px;margin-top:10px"><button id="tiOk">決定</button><button id="tiNo">やめる</button></div></div>`,null);
+  mode='text';$ov.onclick=null;const el=document.getElementById('ti');el.focus();el.select();
+  const ok=()=>{const v=el.value;closeOverlay();cb(v);},no=()=>{closeOverlay();noTime();};
+  el.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')ok();else if(e.key==='Escape')no();};
+  document.getElementById('tiOk').onclick=ok;document.getElementById('tiNo').onclick=no;
 }
 function showInventory(){
   if(!P.pack.length){startCmd();msg('何も持っていない');noTime();return;}
@@ -1223,6 +1302,13 @@ function helpHTML(){
   k('c','アイテムに名前を付ける')+k('D','判明したアイテム一覧')+k('^','罠の種類を調べる（＋方向）')+k('a','直前のコマンドを繰り返す')+
   k('Ctrl+R','メッセージ履歴')+k('/','図鑑（記号と怪物）')+k('v','バージョン')+k('S','保存して中断')+k('Q','冒険をやめる')+k('?','この一覧')+
   `</div><p style="color:var(--dim);font-size:13px;margin-top:10px">ファンクションキー: F1 操作一覧 / F2 図鑑 / F3 繰り返し / F4 履歴 / F6 判明一覧 / F7 持ち物 / F8 罠を調べる</p>`;
+}
+function touchHelpHTML(){
+  return`<h3 style="color:var(--accent);font-size:15px;margin:10px 0 4px">スマホ・タッチ操作</h3><div class="cols">
+  <div>矢印ボタン：移動・攻撃（押しっぱなしで連続移動）</div><div>真ん中の「休む」：1ターン休む</div>
+  <div>マップをタップ：その方向へ1歩</div><div>「走る」を押してから矢印：その方向へ走る</div>
+  <div>「階段」：階段を下りる／心臓を持っていれば上る</div><div>「全体地図」：迷宮全体を表示／元に戻す</div>
+  <div>「コマンド」：食べる・飲む・読む・装備などの一覧</div><div>方向や「はい／いいえ」はボタンかマップのタップで選ぶ</div></div>`;
 }
 function legendHTML(){
   const ic=(c,t)=>`<div class="row"><img src="${sprURL(c)}" alt="">${t}</div>`;
@@ -1272,7 +1358,8 @@ function showDeath(){
     <div style="font-size:20px;margin:6px 0">${esc(G.name)}</div>
     <div>Lv${P.lvl}「${esc(rank())}」</div><div>金貨 ${P.gold}枚</div><div>地下${G.depth}階にて ${esc(G.cause)}</div>
     <div style="color:var(--dim);margin-top:4px">${new Date().getFullYear()}年</div></div>
-    <h2 style="margin-top:18px">殿堂</h2>${fameHTML(e)}<div class="foot">Enter でタイトルへ</div></div>`,ev=>{if(ev.key==='Enter'||ev.key===' ')toTitle();});
+    <h2 style="margin-top:18px">殿堂</h2>${fameHTML(e)}<div class="foot">Enter でタイトルへ</div><button class="close">タイトルへ</button></div>`,ev=>{if(ev.key==='Enter'||ev.key===' ')toTitle();});
+  $ov.onclick=null;$ov.querySelector('.close').onclick=()=>toTitle();
 }
 function showWin(){
   mode='end';ls.del(SAVE_KEY);
@@ -1281,7 +1368,8 @@ function showWin(){
   const total=P.gold+P.pack.reduce((s,it)=>s+val(it),0);
   const e=addScore(total,'灰炎の心臓を持ち帰った！',true);
   openOverlay(`<div class="panel"><h2>おめでとう！</h2><p>${esc(G.name)}は灰炎の心臓を手に、ついに地上の光を浴びた。<br>持ち帰った品々は高値で売れ、あなたは冒険者ギルドの伝説となった。</p>
-   ${rows}<div class="row"><span style="min-width:4em;text-align:right">${P.gold}</span>金貨</div><p><b>合計 ${total}</b></p><h2>殿堂</h2>${fameHTML(e)}<div class="foot">Enter でタイトルへ</div></div>`,ev=>{if(ev.key==='Enter'||ev.key===' ')toTitle();});
+   ${rows}<div class="row"><span style="min-width:4em;text-align:right">${P.gold}</span>金貨</div><p><b>合計 ${total}</b></p><h2>殿堂</h2>${fameHTML(e)}<div class="foot">Enter でタイトルへ</div><button class="close">タイトルへ</button></div>`,ev=>{if(ev.key==='Enter'||ev.key===' ')toTitle();});
+  $ov.onclick=null;$ov.querySelector('.close').onclick=()=>toTitle();
 }
 function cmdSave(){
   askYN('保存して中断しますか？ (y/n)',yes=>{
@@ -1318,11 +1406,12 @@ function toTitle(note){
   el.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter')start();};
   document.getElementById('bNew').onclick=start;
   if(hasSave)document.getElementById('bCont').onclick=()=>{closeOverlay();if(!loadGame())toTitle('セーブデータを読み込めませんでした');};
-  document.getElementById('bFame').onclick=()=>openOverlay(`<div class="panel"><h2>殿堂</h2>${fameHTML()}<div class="foot">何かキーを押すと戻ります</div></div>`,()=>toTitle());
-  document.getElementById('bHelp').onclick=()=>openOverlay(`<div class="panel"><h2>遊び方</h2>
+  const back=()=>{$ov.querySelector('.close').onclick=()=>toTitle();};
+  document.getElementById('bFame').onclick=()=>{openOverlay(`<div class="panel"><h2>殿堂</h2>${fameHTML()}<div class="foot">何かキーを押すと戻ります</div><button class="close">戻る</button></div>`,()=>toTitle());back();};
+  document.getElementById('bHelp').onclick=()=>{openOverlay(`<div class="panel"><h2>遊び方</h2>
     <p style="line-height:1.7">迷宮の各階は部屋と通路でできています。階段（<img class="icon" style="vertical-align:middle" src="${sprURL(TILE.stairs)}">）を下りて深く潜りましょう。<br>
     空腹になったら食料を食べること。薬・巻物・指輪・杖は最初は正体不明です。使うか識別の巻物で正体がわかります。<br>
-    地下${AMULET_DEPTH}階で灰炎の心臓を拾ったら、階段で <kbd>&lt;</kbd> を押して地上まで上り続けてください。</p>${helpHTML()}<div class="foot">何かキーを押すと戻ります</div></div>`,()=>toTitle());
+    地下${AMULET_DEPTH}階で灰炎の心臓を拾ったら、階段で <kbd>&lt;</kbd> を押して地上まで上り続けてください。</p>${touchHelpHTML()}${helpHTML()}<div class="foot">何かキーを押すと戻ります</div><button class="close">戻る</button></div>`,()=>toTitle());back();};
   mode='title';setTimeout(()=>el.focus(),30);
 }
 function startPlay(){mode='play';post();}
@@ -1341,7 +1430,8 @@ function dirOf(e){
   if(k.length===1&&k!==lo&&'hjklyubn'.includes(lo))return{d:m[lo],run:true};
   return null;
 }
-document.addEventListener('keydown',e=>{
+document.addEventListener('keydown',e=>onKey(e));
+function onKey(e){
   if(mode==='text')return;
   if(/^F([1-9])$/.test(e.key)&&e.key!=='F5')e.preventDefault();
   if(e.ctrlKey&&(e.key==='r'||e.key==='R'))e.preventDefault();
@@ -1359,7 +1449,60 @@ document.addEventListener('keydown',e=>{
   }
   if(mode!=='play')return;
   handleKey(e);
-});
+}
+// ===================== タッチ操作 =====================
+function press(key,shift){
+  onKey({key,code:'',shiftKey:!!shift,ctrlKey:false,preventDefault(){}});
+}
+const DIRKEY={'-1,-1':'y','0,-1':'k','1,-1':'u','-1,0':'h','1,0':'l','-1,1':'b','0,1':'j','1,1':'n'};
+function pressDir(dx,dy){
+  if(!dx&&!dy){if(mode==='play'){if(runNext)setRun(false);press('.');}return;}
+  const run=runNext&&mode==='play';if(run)setRun(false);
+  press(DIRKEY[dx+','+dy],run);
+}
+function setRun(v){runNext=v;document.getElementById('tRun').classList.toggle('on',v);}
+(function wireTouch(){
+  // 矢印: 押しっぱなしで連続移動
+  document.querySelectorAll('#pad button').forEach(b=>{
+    const [dx,dy]=b.dataset.d.split(',').map(Number);let t1=null,t2=null;
+    const stop=()=>{clearTimeout(t1);clearInterval(t2);t1=t2=null;};
+    b.addEventListener('pointerdown',ev=>{
+      ev.preventDefault();stop();pressDir(dx,dy);
+      if(dx||dy)t1=setTimeout(()=>{t2=setInterval(()=>{if(mode!=='play'||!G||P.dead){stop();return;}pressDir(dx,dy);},140);},380);
+    });
+    ['pointerup','pointerleave','pointercancel'].forEach(n=>b.addEventListener(n,stop));
+    b.addEventListener('contextmenu',ev=>ev.preventDefault());
+  });
+  document.querySelectorAll('#acts button[data-k]').forEach(b=>b.onclick=()=>press(b.dataset.k));
+  document.getElementById('tRun').onclick=()=>setRun(!runNext);
+  document.getElementById('tStairs').onclick=()=>{
+    if(!G||mode!=='play')return;
+    press(tile(P.x,P.y)===STAIRS&&G.hasAmulet?'<':'>');
+  };
+  document.getElementById('tMap').onclick=()=>{fullMap=!fullMap;document.getElementById('tMap').classList.toggle('on',fullMap);render();};
+  document.getElementById('tLog').onclick=()=>{if(G&&mode==='play')showHistory();};
+  document.getElementById('tMenu').onclick=()=>{if(G&&mode==='play')showCommandMenu();};
+  // マップをタップ: その方向へ1歩（方向入力中はその方向を選ぶ）
+  view.addEventListener('click',ev=>{
+    if(!G||P.dead||(mode!=='play'&&mode!=='dir'))return;
+    const r=view.getBoundingClientRect();
+    const tx=camX+Math.floor((ev.clientX-r.left)/r.width*VW),ty=camY+Math.floor((ev.clientY-r.top)/r.height*VH);
+    pressDir(Math.sign(tx-P.x),Math.sign(ty-P.y));
+  });
+})();
+function showCommandMenu(){
+  const cmds=[['e','食べる'],['q','薬を飲む'],['r','巻物を読む'],['w','武器を持つ'],['W','鎧を着る'],['T','鎧を脱ぐ'],
+    ['P','指輪をはめる'],['R','指輪を外す'],['d','置く'],['t','投げる'],['z','杖を振る'],['c','名前を付ける'],
+    ['D','判明したアイテム'],['^','罠を調べる'],['f','方向を決めて走る'],['/','図鑑'],['?','操作一覧'],['v','バージョン'],
+    ['S','保存して中断'],['Q','冒険をやめる']];
+  openOverlay(`<div class="panel"><h2>コマンド</h2><div class="grid">${cmds.map(([k,l])=>`<button data-k="${esc(k)}" style="text-align:left">${l}</button>`).join('')}</div><button class="close">閉じる</button></div>`,e=>{
+    if(e.key==='Escape'){closeOverlay();return;}
+    const c=cmds.find(([k])=>k===e.key);if(c){closeOverlay();press(c[0]);}
+  });
+  $ov.onclick=e=>{if(e.target===$ov){closeOverlay();}};
+  $ov.querySelectorAll('.grid button').forEach(b=>b.onclick=()=>{closeOverlay();press(b.dataset.k);});
+  $ov.querySelector('.close').onclick=()=>closeOverlay();
+}
 function handleKey(e){
   const k=e.key;
   const rec=()=>{lastKey={key:e.key,code:e.code,shiftKey:e.shiftKey,ctrlKey:e.ctrlKey};};
@@ -1388,7 +1531,7 @@ function handleKey(e){
     case'^':case'F8':cmdTrapId();break;
     case'>':case'Insert':cmdDown();break;
     case'<':case'Delete':cmdUp();break;
-    case'?':case'F1':showInfo('操作一覧',helpHTML());break;
+    case'?':case'F1':showInfo('操作一覧',(document.body.classList.contains('touch')?touchHelpHTML():'')+helpHTML());break;
     case'/':case'F2':showInfo('図鑑',legendHTML());break;
     case'F4':showHistory();break;
     case'v':startCmd();msg('灰の迷宮 ver 1.0 — 単一HTMLのローグライク');noTime();break;
@@ -1396,7 +1539,8 @@ function handleKey(e){
     case'Q':cmdQuit();break;
   }
 }
-window.addEventListener('resize',()=>render());
+window.addEventListener('resize',()=>{layout();render();});
+layout();
 toTitle();
 </script>
 </body>
