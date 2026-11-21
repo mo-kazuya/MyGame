@@ -7,34 +7,26 @@ const $ = id => document.getElementById(id);
 const cv = $('screen'), ctx = cv.getContext('2d');
 const actionsEl = $('actions'), overlay = $('overlay');
 // テスト用：URL の末尾に #auto を付けると 4 人とも CPU で一気に進める
-const AUTO = location.hash === '#auto';
+//   #auto=shinobu,rin,rin,rin のように 4 人のキャラを指定できる（chars.js の id）
+const AUTO_M = location.hash.match(/^#auto(?:=([a-z,]+))?/);
+const AUTO = !!AUTO_M;
+const AUTO_CHARS = AUTO_M && AUTO_M[1] ? AUTO_M[1].split(',') : null;
 
-const NAMES = ['あなた', 'ハル', 'ナツ', 'アキ'];
-// CPU の打ち方の癖（席ごと）。数字を変えると性格が変わります
-//   call     鳴き方 'eager' よく鳴く / 'normal' / 'yakuhai' 役牌のポンだけ / 'careful' 手が進む鳴きだけ、リーチがいたら鳴かない
-//   somete   染め手（混一色・清一色）に寄せる
-//   fold     リーチを受けたとき、シャンテン数がこれ以上ならオリる
-//   push1    1シャンテンで押す危険度の上限（大きいほど押す）
-//   push0    テンパイで押す危険度の上限
-//   dama     役があって高い手（3翻以上）や悪い待ちならリーチしない
-const STYLES = {
-  0: { label: 'ふつう', desc: '', call: 'normal', somete: false, fold: 2, push1: 4, push0: 9, dama: false },
-  1: { label: '鳴き屋', desc: 'どんどん鳴いて早和了り。染め手が好き', call: 'eager', somete: true, fold: 3, push1: 6, push0: 12, dama: false },
-  2: { label: 'リーチ一直線', desc: '鳴かずにリーチ。押しが強い', call: 'yakuhai', somete: false, fold: 3, push1: 10, push0: 99, dama: false },
-  3: { label: '慎重派', desc: '守り重視。高い手はダマで待つ', call: 'careful', somete: false, fold: 1, push1: 0, push0: 4, dama: true },
-};
-const styleOf = s => (AUTO && s === 0 ? STYLES[0] : STYLES[s]);
+const { CHARS, byId: CHAR, DEFAULT_STYLE, TOUR } = window.MJ_CHARS;
+const charOf = s => (G && G.chars ? CHAR[G.chars[s]] : null);
+const nameOf = s => (isHuman(s) ? 'あなた' : charOf(s) ? charOf(s).name : 'CPU');
+const styleOf = s => (charOf(s) ? charOf(s).style : DEFAULT_STYLE);
 const WIND = R.WIND;
 const AKA_IDS = new Set([16, 52, 88]); // 赤ドラ（5萬・5筒・5索の 1 枚ずつ）
 const kindOf = id => id >> 2;
 const SPEED = { slow: 950, normal: 600, fast: 280 };
-const LS = { settings: 'mahjong.settings', stats: 'mahjong.stats', save: 'mahjong.save' };
+const LS = { settings: 'mahjong.settings', stats: 'mahjong.stats', save: 'mahjong.save', tour: 'mahjong.tour' };
 
 function load(key, def) { try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? def : v; } catch (e) { return def; } }
 function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* 保存できなくても遊べる */ } }
 function unstore(key) { try { localStorage.removeItem(key); } catch (e) { /* */ } }
 
-const settings = Object.assign({ length: 'east', aka: true, speed: 'normal', hint: true, noCall: false, sound: true }, load(LS.settings, {}));
+const settings = Object.assign({ length: 'east', aka: true, speed: 'normal', hint: true, noCall: false, sound: true, rivals: ['haru', 'natsu', 'aki'] }, load(LS.settings, {}));
 const saveSettings = () => store(LS.settings, settings);
 
 // ---------- 進行の土台 ----------
@@ -177,15 +169,19 @@ function tenpaiMap(p) {
 }
 
 // ---------- 対局の流れ ----------
-function newMatch(snap) {
+// opt.chars: 4 席のキャラ id（0 番はあなたなので null）、opt.mode: 'free' | 'tour'
+function newMatch(snap, opt) {
   G = snap ? Object.assign({}, snap) : {
     scores: [25000, 25000, 25000, 25000], roundNum: 0, honba: 0, sticks: 0,
-    startDealer: Math.floor(Math.random() * 4), length: settings.length, aka: settings.aka,
+    startDealer: Math.floor(Math.random() * 4),
+    length: opt.mode === 'tour' ? 'east' : settings.length, aka: settings.aka,
+    chars: opt.chars, mode: opt.mode,
   };
+  if (!G.chars) G.chars = [null, 'haru', 'natsu', 'aki'];
   G.h = null;
 }
 function snapshot() {
-  return { scores: G.scores.slice(), roundNum: G.roundNum, honba: G.honba, sticks: G.sticks, startDealer: G.startDealer, length: G.length, aka: G.aka };
+  return { scores: G.scores.slice(), roundNum: G.roundNum, honba: G.honba, sticks: G.sticks, startDealer: G.startDealer, length: G.length, aka: G.aka, chars: G.chars, mode: G.mode };
 }
 async function playMatch() {
   try {
@@ -542,13 +538,18 @@ function dangerOf(k, t, vis) {
 function threatsOf(seat) {
   return [1, 2, 3].map(i => (seat + i) % 4).filter(s => G.h.P[s].riichiPaid);
 }
+// ふつうの CPU：シャンテン数 → 受け入れ枚数 → 癖（染め手・タンヤオ・ドラ）の順で切る牌を決める
 function chooseDiscard(seat) {
+  const st = styleOf(seat);
+  if (st.strong) return strongDiscard(seat);
   const h = G.h, p = h.P[seat];
   const c = counts(p.hand), m = p.melds.length;
   const vis = visibleFor(seat);
   const dk = doraKinds();
   const threats = threatsOf(seat);
-  const st = styleOf(seat);
+  // 七対子好き：対子が多ければ七対子のシャンテン数で考える
+  let shf = cc => R.shanten(cc, m);
+  if (st.chiitoi && m === 0 && R.shantenChiitoi(c) <= R.shanten(c, 0) + 1) shf = cc => R.shantenChiitoi(cc);
   // 染め手：手牌と鳴いた牌でいちばん多い色（字牌も数える）が 8 枚以上なら、ほかの色から切る
   let mainSuit = -1;
   if (st.somete) {
@@ -561,19 +562,19 @@ function chooseDiscard(seat) {
     }
     if (best + honors < 8) mainSuit = -1;
   }
-  const offSuit = k => mainSuit >= 0 && k < 27 && Math.floor(k / 9) !== mainSuit;
+  const offFirst = k => (mainSuit >= 0 && k < 27 && Math.floor(k / 9) !== mainSuit) || (st.tanyao && R.isYao(k));
   let kinds = [...new Set(p.hand.map(kindOf))];
   if (p.forbid) { const k2 = kinds.filter(k => !p.forbid.includes(k)); if (k2.length) kinds = k2; }
   const evals = kinds.map(k => {
     c[k]--;
-    const s = R.shanten(c, m);
+    const s = shf(c);
     let uke = 0;
     if (s <= 4) {
       for (let t = 0; t < 34; t++) {
         const left = 4 - vis[t];
         if (left <= 0 || !near(c, t)) continue;
         c[t]++;
-        if (R.shanten(c, m) < s) uke += left;
+        if (shf(c) < s) uke += left;
         c[t]--;
       }
     }
@@ -589,11 +590,13 @@ function chooseDiscard(seat) {
       keep += n === 0 || n === 8 ? 1 : n === 1 || n === 7 ? 2 : 3;
     }
     const danger = threats.reduce((a, t) => a + dangerOf(k, t, vis), 0);
-    return { k, s, uke, keep, danger, off: offSuit(k) ? 1 : 0 };
+    return { k, s, uke, keep, danger, off: offFirst(k) ? 1 : 0 };
   });
-  const byEff = (a, b) => a.s - b.s || b.off - a.off || b.uke - a.uke || a.keep - b.keep;
+  const byEff = (a, b) => a.s - b.s || b.off - a.off || (b.uke - st.keepW * b.keep) - (a.uke - st.keepW * a.keep) || a.keep - b.keep;
   evals.sort(byEff);
   let pick = evals[0];
+  // はじめたて：ときどき 2〜5 番目にいい牌を切ってしまう
+  if (st.blunder && Math.random() < st.blunder) pick = evals[Math.min(evals.length - 1, 1 + Math.floor(Math.random() * 4))];
   if (threats.length) {
     const minS = pick.s;
     const safest = evals.slice().sort((a, b) => a.danger - b.danger || byEff(a, b))[0];
@@ -604,13 +607,146 @@ function chooseDiscard(seat) {
       pick = keepers[0].danger <= limit ? keepers[0] : safest;
     }
   }
-  // 同じ種類なら、赤ドラ以外・ツモった牌を優先して切る
-  const ids = p.hand.filter(id => kindOf(id) === pick.k);
-  const id = ids.find(x => x === p.drawn && !isAka(x)) ?? ids.find(x => !isAka(x)) ?? ids[0];
-  return { id, ev: pick };
+  return { id: pickId(p, pick.k), ev: pick };
 }
+// 同じ種類なら、赤ドラ以外・ツモった牌を優先して切る
+function pickId(p, k) {
+  const ids = p.hand.filter(id => kindOf(id) === k);
+  return ids.find(x => x === p.drawn && !isAka(x)) ?? ids.find(x => !isAka(x)) ?? ids[0];
+}
+
+// ---------- 強い CPU（雀豪） ----------
+// 警戒する相手：リーチ者、3 副露、2 副露でドラが多いか染め手に見える人
+function strongThreats(seat) {
+  const out = [], dk = doraKinds();
+  for (let i = 1; i <= 3; i++) {
+    const s = (seat + i) % 4, q = G.h.P[s];
+    const dealer = s === dealerSeat() ? 1.5 : 1;
+    if (q.riichiPaid) { out.push({ s, w: dealer, riichi: true }); continue; }
+    const open = q.melds.filter(mm => mm.t !== 'ankan');
+    if (!open.length) continue;
+    const ks = open.flatMap(mm => mm.ids.map(kindOf));
+    const doras = open.reduce((a, mm) => a + mm.ids.filter(id => dk.includes(kindOf(id)) || isAka(id)).length, 0);
+    const suits = new Set(ks.filter(k => k < 27).map(k => Math.floor(k / 9)));
+    const big = doras >= 2 || (suits.size === 1 && open.length >= 2);
+    if (open.length >= 3 || (open.length >= 2 && big)) out.push({ s, w: (open.length >= 3 ? 0.6 : 0.4) * (big ? 1.6 : 1) * dealer, riichi: false });
+  }
+  return out;
+}
+function safeAgainst(k, th) {
+  const q = G.h.P[th.s];
+  if (q.discards.some(d => kindOf(d.id) === k)) return true;
+  if (th.riichi) for (const p of G.h.P) for (const d of p.discards) if (d.seq > q.riichiSeq && kindOf(d.id) === k) return true;
+  return false;
+}
+// 危険度：現物・スジ・字牌の見え方に加えて、壁（ノーチャンス・ワンチャンス）も読む
+function dangerStrong(k, th, vis) {
+  if (safeAgainst(k, th)) return 0;
+  if (k >= 27) {
+    const yh = k >= 31 || k === seatWind(th.s) || k === roundWind();
+    return vis[k] >= 3 ? 0.5 : vis[k] === 2 ? 2 : yh ? 7 : 5;
+  }
+  const n = k % 9;
+  const lo = n >= 3 && safeAgainst(k - 3, th), hi = n <= 5 && safeAgainst(k + 3, th);
+  let d;
+  if (n === 0 || n === 8) d = (n === 0 ? hi : lo) ? 2 : 6;
+  else if (n === 1 || n === 7) d = (n === 1 ? hi : lo) ? 3 : 8;
+  else if (n === 2 || n === 6) d = (n === 2 ? hi : lo) ? 4 : 9;
+  else d = lo && hi ? 4 : lo || hi ? 8 : 12;
+  const shapes = [];
+  if (n <= 6) shapes.push([k + 1, k + 2]);
+  if (n >= 2) shapes.push([k - 2, k - 1]);
+  if (shapes.every(([a, b]) => vis[a] >= 4 || vis[b] >= 4)) d = Math.min(d, n === 0 || n === 8 ? 1.5 : 3);
+  else if (shapes.some(([a, b]) => vis[a] >= 3 || vis[b] >= 3)) d *= 0.8;
+  return d;
+}
+function strongDiscard(seat) {
+  const h = G.h, p = h.P[seat], m = p.melds.length;
+  const c = counts(p.hand), vis = visibleFor(seat), dk = doraKinds();
+  const threats = strongThreats(seat);
+  const left = t => Math.max(0, 4 - vis[t]);
+  const ukeList = (cc, s) => {
+    const out = [];
+    for (let t = 0; t < 34; t++) {
+      if (!left(t) || !near(cc, t)) continue;
+      cc[t]++;
+      if (R.shanten(cc, m) < s) out.push(t);
+      cc[t]--;
+    }
+    return out;
+  };
+  // 1 枚引いたあと、いちばん待ちが広くなる切り方をしたときの待ち枚数
+  const bestTenpai = cc => {
+    let best = 0;
+    for (let d = 0; d < 34; d++) {
+      if (!cc[d]) continue;
+      cc[d]--;
+      if (R.shanten(cc, m) === 0) {
+        let w = 0;
+        for (const t of R.waits(cc, m)) w += left(t);
+        if (w > best) best = w;
+      }
+      cc[d]++;
+    }
+    return best;
+  };
+  let kinds = [...new Set(p.hand.map(kindOf))];
+  if (p.forbid) { const k2 = kinds.filter(k => !p.forbid.includes(k)); if (k2.length) kinds = k2; }
+  const handDora = p.hand.concat(...p.melds.map(mm => mm.ids)).filter(id => dk.includes(kindOf(id)) || isAka(id)).length;
+  const evals = kinds.map(k => {
+    c[k]--;
+    const s = R.shanten(c, m);
+    const ul = s <= 5 ? ukeList(c, s) : [];
+    c[k]++;
+    let keep = 0;
+    keep += 2.5 * dk.filter(d => d === k).length;
+    if (k >= 27) {
+      const yh = k >= 31 || k === seatWind(seat) || k === roundWind();
+      keep += c[k] >= 2 ? (yh ? 4 : 1.5) : (yh ? 0.6 : 0);
+      if (vis[k] - c[k] >= 2) keep -= 0.5;
+    } else {
+      const n = k % 9;
+      keep += n === 0 || n === 8 ? 0 : n === 1 || n === 7 ? 0.5 : 1;
+    }
+    const danger = threats.reduce((a, th) => a + th.w * dangerStrong(k, th, vis), 0);
+    return { k, s, ul, uke: ul.reduce((a, t) => a + left(t), 0), keep, danger, q: 0, han: 0 };
+  });
+  const minS = Math.min(...evals.map(e => e.s));
+  // 先読み：テンパイなら待ちの広さと役、1シャンテンなら「引いたあとの待ちの広さ」の合計
+  for (const e of evals) {
+    if (e.s !== minS) { e.q = e.uke / 4; continue; }
+    if (minS === 0) {
+      e.han = damaHan(seat, pickId(p, e.k));
+      e.q = e.uke * (isMenzen(p) || e.han > 0 ? 1 : 0.1);
+    } else if (minS === 1) {
+      c[e.k]--;
+      let q = 0;
+      for (const t of e.ul) { c[t]++; q += left(t) * bestTenpai(c); c[t]--; }
+      c[e.k]++;
+      e.q = q / 10;
+    } else e.q = e.uke;
+  }
+  const byEff = (a, b) => a.s - b.s || (b.q - 0.6 * b.keep) - (a.q - 0.6 * a.keep) || a.danger - b.danger;
+  let pick = evals.slice().sort(byEff)[0];
+  if (threats.length) {
+    // 押し引き：和了れそうな見込み × 手の値段 と、放銃しそうな見込み × 相手の手の値段 をくらべる
+    const dealer = seat === dealerSeat();
+    const tf = Math.min(1, liveLeft() / 4 / 8);
+    const score = e => {
+      const wc = e.s === 0 ? Math.min(0.5, e.uke * 0.05) * (isMenzen(p) || e.han > 0 ? 1 : 0.2)
+        : e.s === 1 ? Math.min(0.22, e.uke * 0.01) : e.s === 2 ? 0.05 : 0.01;
+      const han = e.s === 0 ? e.han + (isMenzen(p) && !p.riichi ? 1 : 0) : 1 + handDora + (isMenzen(p) ? 1 : 0);
+      const val = R.basePoints(Math.max(1, han), 30).base * (dealer ? 6 : 4);
+      const deal = Math.min(0.5, e.danger * 0.012);
+      return wc * tf * val - deal * 7000 + e.q * 0.01;
+    };
+    pick = evals.slice().sort((a, b) => score(b) - score(a) || byEff(a, b))[0];
+  }
+  return { id: pickId(p, pick.k), ev: pick };
+}
+
 function cpuTurn(seat, opts) {
-  const p = G.h.P[seat];
+  const p = G.h.P[seat], st = styleOf(seat);
   if (opts.tsumo) return { type: 'tsumo', ev: opts.tsumo };
   if (p.riichi) {
     if (opts.kans.length) return { type: 'kan', ...opts.kans[0] };
@@ -618,7 +754,7 @@ function cpuTurn(seat, opts) {
   }
   const threat = threatsOf(seat).length > 0;
   for (const kn of opts.kans) {
-    if (threat) break;
+    if (threat || st.call === 'none') break;
     if (kn.kan === 'kakan') return { type: 'kan', ...kn };
     const c = counts(p.hand);
     const s0 = R.shanten(c, p.melds.length);
@@ -627,10 +763,14 @@ function cpuTurn(seat, opts) {
   }
   const d = chooseDiscard(seat);
   let riichi = !!(opts.riichi && opts.riichi.includes(d.id) && d.ev.s === 0 && d.ev.uke > 0);
-  if (riichi && styleOf(seat).dama) {
-    // 慎重派：リーチしなくても役があり、高い手か待ちが悪い（残り 4 枚以下）ならダマ
+  if (riichi && st.strong) {
+    // 雀豪：役があって満貫級（4翻以上）なら、または終盤で役があるならダマ
+    const han = d.ev.han != null ? d.ev.han : damaHan(seat, d.id);
+    if (han >= 4 || (han >= 1 && liveLeft() < 8)) riichi = false;
+  } else if (riichi && (st.dama || st.damaBad)) {
+    // リーチしなくても役があり、高い手か待ちが悪い（残り 4 枚以下）ならダマ
     const han = damaHan(seat, d.id);
-    if (han >= 3 || (han >= 1 && d.ev.uke <= 4)) riichi = false;
+    if ((st.dama && han >= st.dama) || (st.damaBad && han >= 1 && d.ev.uke <= 4)) riichi = false;
   }
   return { type: 'discard', id: d.id, riichi };
 }
@@ -690,14 +830,23 @@ function cpuWantsCall(seat, k, pair) {
   const c = counts(p.hand);
   const s0 = R.shanten(c, p.melds.length);
   const st = styleOf(seat);
-  const threat = threatsOf(seat).length > 0;
+  if (st.call === 'none') return false;
+  const threat = st.strong ? strongThreats(seat).some(t => t.riichi) : threatsOf(seat).length > 0;
   if (threat && (st.call === 'careful' || s0 >= (st.call === 'eager' ? 3 : 2))) return false;
   const yh = k >= 31 || k === seatWind(seat) || k === roundWind();
   const yakuhaiPon = pair[0] === pair[1] && pair[0] === k && yh;
   if (st.call === 'yakuhai' && !yakuhaiPon) return false;
+  if (st.chiitoi && p.melds.length === 0 && R.shantenChiitoi(c) <= s0 && !yakuhaiPon) return false;
   if (!openYakuPossible(seat, k, pair)) return false;
   for (const x of pair) c[x]--;
   const s1 = minShantenAfter(c, p.melds.length + 1);
+  if (st.strong) {
+    // 雀豪：役牌はポン。それ以外は手が進み、テンパイが近いかドラがあるときだけ
+    if (yakuhaiPon && s1 <= s0) return true;
+    const dk = doraKinds();
+    const doras = p.hand.concat(...p.melds.map(mm => mm.ids)).filter(id => dk.includes(kindOf(id)) || isAka(id)).length + (dk.includes(k) ? 1 : 0);
+    return s1 < s0 && (s0 <= 2 || doras >= 2 || p.melds.length > 0);
+  }
   if (st.call === 'careful') return s1 < s0 && s0 <= 3;
   if (yakuhaiPon && s1 <= s0) return true;
   // 鳴き屋は、もう鳴いているなら手が進まなくても形を崩さない鳴き（同じシャンテン数）もする
@@ -1059,7 +1208,10 @@ function drawCenter() {
     const turn = h.cur === s;
     ctx.font = `${fs}px DotGothic16, monospace`;
     ctx.fillStyle = turn ? '#ffd84a' : seatWind(s) === 27 ? '#ff9a7a' : '#d8eee0';
-    ctx.fillText(wind + ' ' + NAMES[s] + ' ' + G.scores[s], 0, C / 2 - fs * 0.85);
+    const label = wind + ' ' + nameOf(s) + ' ' + G.scores[s];
+    ctx.fillText(label, 0, C / 2 - fs * 0.85);
+    const ch = isHuman(s) ? null : charOf(s);
+    if (ch) { ctx.fillStyle = ch.color; circle(ctx, -ctx.measureText(label).width / 2 - fs * 0.55, C / 2 - fs * 0.85, fs * 0.28); }
     if (turn) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(-C * 0.3, C / 2 - fs * 0.2, C * 0.6, 2); }
     if (p.riichiPaid) {
       const sw = C * 0.5, sh = Math.max(4, fs * 0.32), sy = C / 2 - fs * 1.85;
@@ -1206,7 +1358,7 @@ function handRow(p, seat, winId, w) {
 function scoreTable(before, delta) {
   const rows = ranking().map(s => {
     const d = delta[s];
-    return `<tr><td>${WIND[seatWind(s) - 27]}</td><td>${NAMES[s]}</td><td class="num">${before[s]}</td><td class="num ${d > 0 ? 'plus' : d < 0 ? 'minus' : ''}">${d > 0 ? '+' + d : d || ''}</td><td class="num">${G.scores[s]}</td></tr>`;
+    return `<tr><td>${WIND[seatWind(s) - 27]}</td><td>${nameOf(s)}</td><td class="num">${before[s]}</td><td class="num ${d > 0 ? 'plus' : d < 0 ? 'minus' : ''}">${d > 0 ? '+' + d : d || ''}</td><td class="num">${G.scores[s]}</td></tr>`;
   }).join('');
   return `<table class="scores">${rows}</table>`;
 }
@@ -1220,7 +1372,7 @@ async function showResult(r) {
   const tw = fit(h.P[r.seat != null ? r.seat : 0]);
   if (r.type === 'win') {
     const ev = r.ev, p = h.P[r.seat];
-    const title = `${NAMES[r.seat]}の${r.tsumo ? 'ツモ' : 'ロン'}和了` + (r.tsumo ? '' : `<small>（${NAMES[r.from]}から）</small>`);
+    const title = `${nameOf(r.seat)}の${r.tsumo ? 'ツモ' : 'ロン'}和了` + (r.tsumo ? '' : `<small>（${nameOf(r.from)}から）</small>`);
     const yaku = ev.yaku.map(y => `<tr><td>${esc(y[0])}</td><td class="num">${ev.yakuman ? (y[1] > 1 ? y[1] + '倍' : '') + '役満' : y[1] + '翻'}</td></tr>`).join('');
     const total = ev.yakuman ? ev.label : `${ev.fu}符 ${ev.han}翻` + (ev.label ? ' ' + ev.label : '');
     showOverlay(`<h2>${title}</h2><div id="rh"></div><div class="dora"><span>ドラ表示</span><span id="rd"></span>${p.riichi ? '<span>裏ドラ</span><span id="ru"></span>' : ''}</div>
@@ -1230,31 +1382,164 @@ async function showResult(r) {
     for (const id of doraIndicators()) $('rd').appendChild(tileOf(id, 20));
     if (p.riichi) for (const id of uraIndicators()) $('ru').appendChild(tileOf(id, 20));
   } else {
-    const list = [0, 1, 2, 3].map(s => `<div class="tp"><p>${WIND[seatWind(s) - 27]} ${NAMES[s]}：${r.ten[s] ? '<b class="plus">テンパイ</b>' : 'ノーテン'}</p><div id="th${s}"></div></div>`).join('');
+    const list = [0, 1, 2, 3].map(s => `<div class="tp"><p>${WIND[seatWind(s) - 27]} ${nameOf(s)}：${r.ten[s] ? '<b class="plus">テンパイ</b>' : 'ノーテン'}</p><div id="th${s}"></div></div>`).join('');
     showOverlay(`<h2>流局</h2>${list}${scoreTable(r.before, r.delta)}<button class="big" id="next">次へ</button>`, 'result');
     for (let s = 0; s < 4; s++) if (r.ten[s] || s === 0) $('th' + s).appendChild(handRow(h.P[s], s, null, Math.min(24, fit(h.P[s]))));
   }
   await waitClick($('next'));
   hideOverlay();
 }
+function loadStats() {
+  const st = load(LS.stats, {});
+  return Object.assign({ games: 0, ranks: [0, 0, 0, 0], best: null, tourPlays: 0, tourWins: 0, tourBest: -1 }, st);
+}
 async function showFinal() {
   // 残った供託はトップへ
   const order = ranking();
   if (G.sticks) { G.scores[order[0]] += G.sticks * 1000; G.sticks = 0; }
   const myRank = ranking().indexOf(0);
-  if (!AUTO) {
-    const st = load(LS.stats, { games: 0, ranks: [0, 0, 0, 0], best: null });
-    st.games++; st.ranks[myRank]++;
-    if (st.best == null || G.scores[0] > st.best) st.best = G.scores[0];
-    store(LS.stats, st);
+  if (AUTO) {
+    const rk = window.__rank || (window.__rank = {});
+    ranking().forEach((s, i) => { const id = G.chars[s]; (rk[id] || (rk[id] = [0, 0, 0, 0]))[i]++; });
+    window.__autoDone = (window.__autoDone || 0) + 1;
+    startMatch(null, autoOpt());
+    return;
   }
-  if (AUTO) { window.__autoDone = (window.__autoDone || 0) + 1; startMatch(null); return; }
-  const rows = ranking().map((s, i) => `<tr class="${s === 0 ? 'me' : ''}"><td>${i + 1}位</td><td>${NAMES[s]}</td><td class="num">${G.scores[s]}</td></tr>`).join('');
+  const st = loadStats();
+  st.games++; st.ranks[myRank]++;
+  if (st.best == null || G.scores[0] > st.best) st.best = G.scores[0];
+  store(LS.stats, st);
+  if (G.mode === 'tour') return tourAfterMatch(myRank);
   const msg = ['おめでとう！トップです！', '2位。あと一歩！', '3位。次はがんばろう', 'ラス…。次こそ！'][myRank];
-  showOverlay(`<h2>対局終了</h2><p class="msg">${msg}</p><table class="scores final">${rows}</table>
-    <div class="btns"><button class="big" id="again">もう一度</button><button id="totitle">タイトルへ</button></div>`, 'result');
-  $('again').onclick = () => { hideOverlay(); startMatch(null); };
+  showOverlay(`<h2>対局終了</h2><p class="msg">${msg}</p>${finalTable()}
+    <div class="btns"><button class="big" id="again">同じ相手ともう一度</button></div>
+    <div class="btns"><button id="pick">相手を選ぶ</button><button id="totitle">タイトルへ</button></div>`, 'result');
+  const chars = G.chars;
+  $('again').onclick = () => { hideOverlay(); startMatch(null, { mode: 'free', chars }); };
+  $('pick').onclick = () => showSelect();
   $('totitle').onclick = () => showTitle();
+}
+function finalTable() {
+  const rows = ranking().map((s, i) => `<tr class="${s === 0 ? 'me' : ''}"><td>${i + 1}位</td><td>${s === 0 ? 'あなた' : charLabel(G.chars[s])}</td><td class="num">${G.scores[s]}</td></tr>`).join('');
+  return `<table class="scores final">${rows}</table>`;
+}
+const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+const charLabel = id => `<i class="dot" style="background:${CHAR[id].color}"></i>${CHAR[id].name}`;
+function charCard(id, on, tag) {
+  const c = CHAR[id];
+  return `<${tag || 'button'} class="char${on ? ' on' : ''}" data-id="${id}">
+    <i class="face" style="background:${c.color}">${c.name[0]}</i>
+    <span class="nm"><b>${c.name}</b><em>${stars(c.stars)}</em></span>
+    <span class="lb">${c.label}</span><small>${c.desc}</small></${tag || 'button'}>`;
+}
+function autoOpt() {
+  if (AUTO_CHARS) return { mode: 'free', chars: AUTO_CHARS.slice(0, 4) };
+  const ids = shuffle(CHARS.map(c => c.id)).slice(0, 4);
+  return { mode: 'free', chars: ids };
+}
+
+// ---------- フリー対局：相手を選ぶ ----------
+function showSelect() {
+  abortAll(); G = null; dirty = true;
+  let sel = (settings.rivals || []).filter(id => CHAR[id]).slice(0, 3);
+  const p = showOverlay(`<h2>対戦相手を 3 人選ぶ</h2>
+    <div class="chars">${CHARS.map(c => charCard(c.id, sel.includes(c.id))).join('')}</div>
+    ${opt('対局', 'length', [['east', '東風戦'], ['half', '半荘戦']])}
+    <div class="btns"><button id="rand">おまかせ</button><button class="big" id="go">対局開始</button></div>
+    <div class="btns"><button id="back">もどる</button></div>`, 'select');
+  bindOpts(p);
+  const refresh = () => {
+    p.querySelectorAll('.char').forEach(b => b.classList.toggle('on', sel.includes(b.dataset.id)));
+    $('go').disabled = sel.length !== 3;
+    $('go').textContent = sel.length === 3 ? '対局開始' : `あと ${3 - sel.length} 人`;
+  };
+  p.querySelector('.chars').addEventListener('click', e => {
+    const b = e.target.closest('.char'); if (!b) return;
+    const id = b.dataset.id;
+    if (sel.includes(id)) sel = sel.filter(x => x !== id);
+    else { sel.push(id); if (sel.length > 3) sel.shift(); }
+    refresh();
+  });
+  $('rand').onclick = () => { sel = shuffle(CHARS.map(c => c.id)).slice(0, 3); refresh(); };
+  $('go').onclick = () => {
+    if (sel.length !== 3) return;
+    settings.rivals = sel.slice(); saveSettings();
+    ensureAudio(); hideOverlay();
+    startMatch(null, { mode: 'free', chars: [null, ...shuffle(sel.slice())] });
+  };
+  $('back').onclick = () => showTitle();
+  refresh();
+}
+
+// ---------- トーナメント ----------
+// 予選・準決勝は 2 位以内で勝ち上がり、決勝は 1 位で優勝
+function newTour() {
+  const used = new Set(), ops = [];
+  // 決勝から順に相手を決める（なるべく同じ相手と二度当たらないように）
+  for (let i = TOUR.length - 1; i >= 0; i--) {
+    const t = TOUR[i];
+    const pool = shuffle(t.pool.filter(id => !used.has(id))).concat(shuffle(t.pool.filter(id => used.has(id))));
+    const list = t.fixed.slice();
+    for (const id of pool) if (list.length < 3 && !list.includes(id)) list.push(id);
+    list.forEach(id => used.add(id));
+    ops[i] = list;
+  }
+  return { stage: 0, ops, results: [] };
+}
+function showTour() {
+  abortAll(); G = null; dirty = true;
+  let T = load(LS.tour, null);
+  if (!T) {
+    T = newTour(); store(LS.tour, T);
+    const st = loadStats(); st.tourPlays++; store(LS.stats, st);
+  }
+  const stages = TOUR.map((t, i) => {
+    const r = T.results.find(x => x.stage === i);
+    const state = r ? `<b class="plus">${r.rank + 1}位で通過</b>` : i === T.stage ? '<b class="now">つぎの対局</b>' : '';
+    const rule = t.pass === 1 ? '1位で優勝' : `${t.pass}位以内で勝ち上がり`;
+    return `<div class="stage${i === T.stage ? ' cur' : ''}${r ? ' done' : ''}">
+      <p class="sh"><span>${i + 1}. ${t.name}</span><small>${rule}</small>${state}</p>
+      <div class="chars mini">${T.ops[i].map(id => charCard(id, false, 'div')).join('')}</div></div>`;
+  }).join('');
+  showOverlay(`<h2>トーナメント</h2><p class="small">1 戦ずつ東風戦。勝ち上がるほど相手が強くなります</p>${stages}
+    <div class="btns"><button class="big" id="go">${TOUR[T.stage].name}を打つ</button></div>
+    <div class="btns"><button id="totitle">タイトルへ（続きは保存）</button><button id="retire">棄権する</button></div>`, 'tour');
+  $('go').onclick = () => { ensureAudio(); hideOverlay(); startMatch(null, { mode: 'tour', chars: [null, ...shuffle(T.ops[T.stage].slice())] }); };
+  $('totitle').onclick = () => showTitle();
+  $('retire').onclick = () => {
+    if (!confirm('棄権するとトーナメントは終わります。よろしいですか？')) return;
+    const st = loadStats(); st.tourBest = Math.max(st.tourBest, T.stage - 1); store(LS.stats, st);
+    unstore(LS.tour); showTitle();
+  };
+}
+function tourAfterMatch(rank) {
+  const T = load(LS.tour, null) || newTour();
+  const t = TOUR[T.stage];
+  const pass = rank < t.pass;
+  const st = loadStats();
+  if (pass) T.results.push({ stage: T.stage, rank, score: G.scores[0] });
+  let html;
+  if (pass && T.stage === TOUR.length - 1) {
+    st.tourWins++; st.tourBest = TOUR.length - 1;
+    unstore(LS.tour);
+    html = `<h2>優勝！</h2><p class="msg">おめでとう！ 月夜の雀荘のチャンピオンです</p>${finalTable()}
+      <p class="small">トーナメント優勝 ${st.tourWins}回</p>
+      <div class="btns"><button class="big" id="next">タイトルへ</button></div>`;
+  } else if (pass) {
+    st.tourBest = Math.max(st.tourBest, T.stage);
+    T.stage++;
+    store(LS.tour, T);
+    html = `<h2>${t.name} 突破！</h2><p class="msg">${rank + 1}位で勝ち上がり。次は${TOUR[T.stage].name}です</p>${finalTable()}
+      <div class="btns"><button class="big" id="next">つぎへ</button></div>`;
+  } else {
+    st.tourBest = Math.max(st.tourBest, T.stage - 1);
+    unstore(LS.tour);
+    html = `<h2>${t.name}で敗退…</h2><p class="msg">${rank + 1}位。${t.pass === 1 ? '1位' : t.pass + '位以内'}で勝ち上がりでした</p>${finalTable()}
+      <div class="btns"><button class="big" id="next">タイトルへ</button></div>`;
+  }
+  store(LS.stats, st);
+  showOverlay(html, 'result');
+  $('next').onclick = () => (pass && T.stage < TOUR.length && load(LS.tour, null) ? showTour() : showTitle());
 }
 
 function opt(name, key, choices) {
@@ -1276,26 +1561,39 @@ function showTitle() {
   abortAll();
   G = null; dirty = true;
   const snap = load(LS.save, null);
-  const st = load(LS.stats, { games: 0, ranks: [0, 0, 0, 0], best: null });
-  const stats = st.games ? `<p class="small">これまで ${st.games}局（1位 ${st.ranks[0]}回・2位 ${st.ranks[1]}回・3位 ${st.ranks[2]}回・4位 ${st.ranks[3]}回）</p>` : '';
-  const p = showOverlay(`<h1>月夜の雀荘</h1><p class="sub">4人打ちリーチ麻雀　あなた vs CPU 3人</p>
-    ${opt('対局', 'length', [['east', '東風戦'], ['half', '半荘戦']])}
+  const tour = load(LS.tour, null);
+  const st = loadStats();
+  const stats = st.games ? `<p class="small">これまで ${st.games}局（1位 ${st.ranks[0]}回・2位 ${st.ranks[1]}回・3位 ${st.ranks[2]}回・4位 ${st.ranks[3]}回）` +
+    (st.tourPlays ? `<br>トーナメント 優勝 ${st.tourWins}回 / 挑戦 ${st.tourPlays}回` : '') + '</p>' : '';
+  const contInfo = snap ? `${snap.mode === 'tour' ? 'トーナメント・' : ''}${WIND[Math.floor(snap.roundNum / 4)]}${snap.roundNum % 4 + 1}局 ${snap.honba}本場のはじめから（あなた ${snap.scores[0]}点）` : '';
+  const p = showOverlay(`<h1>月夜の雀荘</h1><p class="sub">4人打ちリーチ麻雀　${CHARS.length}人のライバル</p>
+    ${snap ? `<div class="btns"><button class="big" id="cont">続きから</button></div><p class="small">${contInfo}</p>` : ''}
+    <div class="btns modes"><button class="big" id="free">フリー対局<small>相手を選んで打つ</small></button>
+      <button class="big" id="tour">トーナメント<small>${tour ? `続き：${TOUR[tour.stage].name}から` : '予選→準決勝→決勝'}</small></button></div>
     ${opt('赤ドラ', 'aka', [[true, 'あり'], [false, 'なし']])}
     ${opt('CPUの速さ', 'speed', [['slow', 'ゆっくり'], ['normal', 'ふつう'], ['fast', 'はやい']])}
     ${opt('待ちのヒント', 'hint', [[true, 'あり'], [false, 'なし']])}
-    <div class="rivals">${[1, 2, 3].map(s => `<div><b>${NAMES[s]}</b><span>${STYLES[s].label}</span><small>${STYLES[s].desc}</small></div>`).join('')}</div>
-    <div class="btns">${snap ? '<button class="big" id="cont">続きから</button>' : ''}<button class="big" id="start">はじめる</button></div>
-    ${snap ? `<p class="small">続き：${WIND[Math.floor(snap.roundNum / 4)]}${snap.roundNum % 4 + 1}局 ${snap.honba}本場のはじめから（あなた ${snap.scores[0]}点）</p>` : ''}
-    <div class="btns"><button id="howto">遊び方・役一覧</button></div>${stats}
+    <div class="btns"><button id="howto">遊び方・役一覧</button><button id="roster">キャラクター</button></div>${stats}
     <p class="back"><a href="../index.html">← ゲーム一覧へ</a></p>`, 'title');
   bindOpts(p);
-  $('start').onclick = () => { ensureAudio(); hideOverlay(); startMatch(null); };
   if (snap) $('cont').onclick = () => { ensureAudio(); hideOverlay(); startMatch(snap); };
+  const leaveSnap = next => {
+    if (snap && !confirm('保存してある対局の続きは消えます。よろしいですか？')) return;
+    unstore(LS.save);
+    next();
+  };
+  $('free').onclick = () => leaveSnap(showSelect);
+  $('tour').onclick = () => leaveSnap(showTour);
   $('howto').onclick = () => showHowto(showTitle);
+  $('roster').onclick = () => {
+    showOverlay(`<h2>キャラクター</h2><div class="chars">${CHARS.map(c => charCard(c.id, false, 'div')).join('')}</div>
+      <button class="big" id="back">もどる</button>`, 'select');
+    $('back').onclick = () => showTitle();
+  };
 }
-function startMatch(snap) {
+function startMatch(snap, opt) {
   abortAll();
-  newMatch(snap);
+  newMatch(snap, opt || {});
   dirty = true;
   playMatch();
 }
@@ -1310,11 +1608,12 @@ function showHowto(back) {
   const yaku = YAKU_LIST.map(([h, l]) => `<tr><th>${h}</th><td>${l}</td></tr>`).join('');
   showOverlay(`<h2>遊び方</h2>
     <ul class="howto">
-      <li>あなた（下）と CPU 3人で打つ、ふつうのリーチ麻雀です。持ち点 25000点。東風戦は東1〜4局、半荘戦は南4局まで。だれかが 0点未満になったら終わり</li>
+      <li>あなた（下）と CPU 3人で打つ、ふつうのリーチ麻雀です。持ち点 25000点。東風戦は東1〜4局、半荘戦は南4局まで（フリー対局で選べます）。だれかが 0点未満になったら終わり</li>
       <li>自分の番は牌を 1 枚ツモって、1 枚切ります。<b>パソコン</b>はクリック、<b>スマホ</b>は同じ牌を 2 回タップで切ります</li>
       <li>和了れるとき・鳴けるときは下にボタンが出ます（ツモ・ロン・リーチ・ポン・チー・カン・スキップ）。メニュー（≡）で鳴きの確認を「しない」にもできます</li>
       <li>リーチはメンゼンでテンパイのとき。押すと切れる牌だけが明るくなります。リーチ後はツモ切りが自動</li>
-      <li>対戦相手には癖があります。${[1, 2, 3].map(s => `<b>${NAMES[s]}</b>（${STYLES[s].label}）：${STYLES[s].desc}`).join('、')}</li>
+      <li><b>フリー対局</b>は ${CHARS.length}人のキャラクターから相手を 3 人選んで打ちます。<b>トーナメント</b>は予選・準決勝（2位以内で勝ち上がり）と決勝（1位で優勝）の 3 戦。どれも東風戦です</li>
+      <li>キャラクターごとに打ち方の癖があります（タイトルの「キャラクター」で見られます）。★5 の<b>シノブ</b>は先読みと押し引きの計算をする強敵です</li>
       <li>和了には役が 1 つ以上必要です。ドラは役になりません</li>
       <li>待ちのヒントが「あり」なら、切るとテンパイになる牌に ▼ が付き、テンパイ中は待ち牌が表示されます</li>
       <li>フリテン（自分の捨て牌に待ち牌がある・見逃した）だとロンできません。ツモは OK</li>
@@ -1383,7 +1682,7 @@ if (document.fonts && document.fonts.load) {
   Promise.all([document.fonts.load(`700 20px "Noto Serif JP"`, '一萬東'), document.fonts.load('16px DotGothic16')])
     .then(() => { faceCache.clear(); dirty = true; }).catch(() => {});
 }
-if (AUTO) { settings.speed = 'fast'; startMatch(null); } else showTitle();
+if (AUTO) { settings.speed = 'fast'; startMatch(null, autoOpt()); } else showTitle();
 window.__mj = { get G() { return G; } }; // デバッグ用
 window.__mjHits = () => ui.hits.filter(h => canDiscard(h.id));
 })();
