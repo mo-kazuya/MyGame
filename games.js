@@ -69,4 +69,12 @@ const GAMES = [
     tags: ['PC', 'スマホ', 'セーブ対応'],
     thumb: 'thumb.png',
   },
+  {
+    dir: 'mahjong',
+    title: '月夜の雀荘',
+    genre: '麻雀（4人打ち）',
+    desc: 'あなたと CPU 3人で打つリーチ麻雀。ポン・チー・カン、リーチ・一発・裏ドラ、役満まで。待ちのヒントつきで初心者も安心。',
+    tags: ['PC', 'スマホ', '途中保存'],
+    thumb: 'thumb.png',
+  },
 ];
