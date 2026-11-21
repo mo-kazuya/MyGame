@@ -631,7 +631,7 @@ function strongThreats(seat) {
     const doras = open.reduce((a, mm) => a + mm.ids.filter(id => dk.includes(kindOf(id)) || isAka(id)).length, 0);
     const suits = new Set(ks.filter(k => k < 27).map(k => Math.floor(k / 9)));
     const big = doras >= 2 || (suits.size === 1 && open.length >= 2);
-    if (open.length >= 3 || (open.length >= 2 && big)) out.push({ s, w: (open.length >= 3 ? 0.6 : 0.4) * (big ? 1.6 : 1) * dealer, riichi: false });
+    if (open.length >= 3 || (open.length >= 2 && big)) out.push({ s, w: (open.length >= 3 ? 0.4 : 0.25) * (big ? 1.5 : 1) * dealer, riichi: false });
   }
   return out;
 }
@@ -731,16 +731,18 @@ function strongDiscard(seat) {
   const byEff = (a, b) => a.s - b.s || (b.q - 0.6 * b.keep) - (a.q - 0.6 * a.keep) || a.danger - b.danger;
   let pick = evals.slice().sort(byEff)[0];
   if (threats.length) {
-    // 押し引き：和了れそうな見込み × 手の値段 と、放銃しそうな見込み × 相手の手の値段 をくらべる
+    // 押し引き：和了れそうな見込み × 自分の手の値段 と、放銃しそうな見込み × 相手の手の値段 をくらべる
+    // （見込みの数字は、ふつうの対局でのおおよその和了率・放銃率に合わせてある）
     const dealer = seat === dealerSeat();
-    const tf = Math.min(1, liveLeft() / 4 / 8);
+    const tf = Math.min(1, liveLeft() / 30);
     const score = e => {
-      const wc = e.s === 0 ? Math.min(0.5, e.uke * 0.05) * (isMenzen(p) || e.han > 0 ? 1 : 0.2)
-        : e.s === 1 ? Math.min(0.22, e.uke * 0.01) : e.s === 2 ? 0.05 : 0.01;
-      const han = e.s === 0 ? e.han + (isMenzen(p) && !p.riichi ? 1 : 0) : 1 + handDora + (isMenzen(p) ? 1 : 0);
-      const val = R.basePoints(Math.max(1, han), 30).base * (dealer ? 6 : 4);
-      const deal = Math.min(0.5, e.danger * 0.012);
-      return wc * tf * val - deal * 7000 + e.q * 0.01;
+      const yakuOk = isMenzen(p) || e.han > 0;
+      const wc = e.s === 0 ? Math.min(0.55, 0.25 + 0.03 * e.uke) * (yakuOk ? 1 : 0.2)
+        : e.s === 1 ? Math.min(0.2, 0.04 + 0.005 * e.uke) : e.s === 2 ? 0.03 : 0.01;
+      const han = e.s === 0 ? e.han + (isMenzen(p) && !p.riichi ? 1.5 : 0) : 1 + handDora + (isMenzen(p) ? 1 : 0);
+      const val = R.basePoints(Math.max(1, Math.round(han)), 30).base * (dealer ? 6 : 4);
+      const deal = Math.min(0.5, e.danger * 0.011);
+      return wc * tf * val - deal * 5500 + e.q * 0.5 - e.keep;
     };
     pick = evals.slice().sort((a, b) => score(b) - score(a) || byEff(a, b))[0];
   }
