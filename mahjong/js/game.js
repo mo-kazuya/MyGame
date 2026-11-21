@@ -663,7 +663,7 @@ function dangerStrong(k, th, vis) {
   return d;
 }
 function strongDiscard(seat) {
-  const h = G.h, p = h.P[seat], m = p.melds.length;
+  const h = G.h, p = h.P[seat], m = p.melds.length, st = styleOf(seat);
   const c = counts(p.hand), vis = visibleFor(seat), dk = doraKinds();
   const threats = EXP.includes('nodef') ? [] : strongThreats(seat);
   const left = t => Math.max(0, 4 - vis[t]);
@@ -742,7 +742,7 @@ function strongDiscard(seat) {
       const han = e.s === 0 ? e.han + (isMenzen(p) && !p.riichi ? 1.5 : 0) : 1 + handDora + (isMenzen(p) ? 1 : 0);
       const val = R.basePoints(Math.max(1, Math.round(han)), 30).base * (dealer ? 6 : 4);
       const deal = Math.min(0.5, e.danger * 0.011);
-      return wc * tf * val - deal * 5500 + e.q * 0.5 - e.keep;
+      return wc * tf * val * st.aggr - deal * 5500 + e.q * 0.5 - e.keep;
     };
     pick = evals.slice().sort((a, b) => score(b) - score(a) || byEff(a, b))[0];
   }
@@ -770,7 +770,7 @@ function cpuTurn(seat, opts) {
   if (riichi && st.strong) {
     // 雀豪：役があって満貫級（4翻以上）なら、または終盤で役があるならダマ
     const han = d.ev.han != null ? d.ev.han : damaHan(seat, d.id);
-    if (han >= 4 || (han >= 1 && liveLeft() < 8)) riichi = false;
+    if (han >= st.sDama || (han >= 1 && liveLeft() < 8)) riichi = false;
   } else if (riichi && (st.dama || st.damaBad)) {
     // リーチしなくても役があり、高い手か待ちが悪い（残り 4 枚以下）ならダマ
     const han = damaHan(seat, d.id);
@@ -849,7 +849,7 @@ function cpuWantsCall(seat, k, pair) {
     if (yakuhaiPon && s1 <= s0) return true;
     const dk = doraKinds();
     const doras = p.hand.concat(...p.melds.map(mm => mm.ids)).filter(id => dk.includes(kindOf(id)) || isAka(id)).length + (dk.includes(k) ? 1 : 0);
-    return s1 < s0 && (s0 <= 2 || doras >= 2 || p.melds.length > 0);
+    return s1 < s0 && (st.sCall === 'speed' || s0 <= 2 || doras >= 2 || p.melds.length > 0);
   }
   if (st.call === 'careful') return s1 < s0 && s0 <= 3;
   if (yakuhaiPon && s1 <= s0) return true;

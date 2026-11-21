@@ -15,10 +15,13 @@
 //   damaBad  役があって待ちが悪い（残り 4 枚以下）ならリーチしない
 //   blunder  ときどき効率の悪い牌を切る確率
 //   strong   強い思考（先読み・手の値段・危険度の読み・押し引きの損得）を使う
+//   aggr     強い思考の攻めっ気（押し引きで自分の和了をどれだけ重く見るか。1 が標準、大きいほど押す）
+//   sDama    強い思考で、役があってこの翻数以上ならダマ（大きいほどリーチする）
+//   sCall    強い思考の鳴き 'normal' テンパイが近いかドラがあるときだけ / 'speed' 役があれば手が進む鳴きはする
 (function (root) {
   const DEFAULT_STYLE = {
     call: 'normal', somete: false, tanyao: false, chiitoi: false, keepW: 0,
-    fold: 2, push1: 4, push0: 9, dama: 0, damaBad: false, blunder: 0, strong: false,
+    fold: 2, push1: 4, push0: 9, dama: 0, damaBad: false, blunder: 0, strong: false, aggr: 1, sDama: 4, sCall: 'normal',
   };
   const CHARS = [
     { id: 'mio', name: 'ミオ', color: '#ff9ac8', stars: 1, label: 'はじめたて',
@@ -46,8 +49,8 @@
       desc: '攻めも守りもそつなくこなす、雀荘の常連',
       style: { keepW: 0.3 } },
     { id: 'shinobu', name: 'シノブ', color: '#ffe36a', stars: 5, label: '雀豪',
-      desc: '先を読んで良い形を作り、手の値段と危険度をはかって押し引きする強敵',
-      style: { strong: true } },
+      desc: '先を読んで良い形を作り、手の値段と危険度をはかって押し引きする強敵。攻めっ気が強く、トップを取りにくる',
+      style: { strong: true, aggr: 1.6, sDama: 6, sCall: 'speed' } },
   ];
   const byId = {};
   for (const c of CHARS) { c.style = Object.assign({}, DEFAULT_STYLE, c.style); byId[c.id] = c; }
