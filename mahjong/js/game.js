@@ -11,6 +11,8 @@ const actionsEl = $('actions'), overlay = $('overlay');
 const AUTO_M = location.hash.match(/^#auto(?:=([a-z,]+))?/);
 const AUTO = !!AUTO_M;
 const AUTO_CHARS = AUTO_M && AUTO_M[1] ? AUTO_M[1].split(',') : null;
+// テスト用：?exp=nodef,nolook のように強い思考の一部を切って比べる
+const EXP = (new URLSearchParams(location.search).get('exp') || '').split(',');
 
 const { CHARS, byId: CHAR, DEFAULT_STYLE, TOUR } = window.MJ_CHARS;
 const charOf = s => (G && G.chars ? CHAR[G.chars[s]] : null);
@@ -663,7 +665,7 @@ function dangerStrong(k, th, vis) {
 function strongDiscard(seat) {
   const h = G.h, p = h.P[seat], m = p.melds.length;
   const c = counts(p.hand), vis = visibleFor(seat), dk = doraKinds();
-  const threats = strongThreats(seat);
+  const threats = EXP.includes('nodef') ? [] : strongThreats(seat);
   const left = t => Math.max(0, 4 - vis[t]);
   const ukeList = (cc, s) => {
     const out = [];
@@ -718,7 +720,7 @@ function strongDiscard(seat) {
     if (minS === 0) {
       e.han = damaHan(seat, pickId(p, e.k));
       e.q = e.uke * (isMenzen(p) || e.han > 0 ? 1 : 0.1);
-    } else if (minS === 1) {
+    } else if (minS === 1 && !EXP.includes('nolook')) {
       c[e.k]--;
       let q = 0;
       for (const t of e.ul) { c[t]++; q += left(t) * bestTenpai(c); c[t]--; }
