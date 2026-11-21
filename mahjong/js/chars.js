@@ -50,7 +50,7 @@
       style: { keepW: 0.3 } },
     { id: 'shinobu', name: 'シノブ', color: '#ffe36a', stars: 5, label: '雀豪',
       desc: '先を読んで良い形を作り、手の値段と危険度をはかって押し引きする強敵。攻めっ気が強く、トップを取りにくる',
-      style: { strong: true, aggr: 1.6, sDama: 6 } },
+      style: { strong: true, aggr: 1.6, sDama: 6, sCall: 'speed' } },
   ];
   const byId = {};
   for (const c of CHARS) { c.style = Object.assign({}, DEFAULT_STYLE, c.style); byId[c.id] = c; }
