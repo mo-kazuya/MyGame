@@ -15,6 +15,7 @@
 | [`brain-calc/`](brain-calc/) | [計算道場](brain-calc/README.md) | 脳トレ（計算） |
 | [`brain-memory/`](brain-memory/) | [記憶道場](brain-memory/README.md) | 脳トレ（記憶） |
 | [`ashen-depths/`](ashen-depths/) | [灰の迷宮](ashen-depths/README.md) | ローグライク（ローグ風） |
+| [`mahjong/`](mahjong/) | [月夜の雀荘](mahjong/README.md) | 麻雀（4人打ちリーチ麻雀） |
 
 ## 構成
 
@@ -29,6 +30,7 @@ snake/               くねくねスネーク
 brain-calc/          計算道場
 brain-memory/        記憶道場
 ashen-depths/        灰の迷宮
+mahjong/             月夜の雀荘
 ```
 
 各ゲームはフォルダの中だけで完結していて、ほかのフォルダのファイルは使いません。
