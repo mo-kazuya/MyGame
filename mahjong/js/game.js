@@ -10,6 +10,20 @@ const actionsEl = $('actions'), overlay = $('overlay');
 const AUTO = location.hash === '#auto';
 
 const NAMES = ['あなた', 'ハル', 'ナツ', 'アキ'];
+// CPU の打ち方の癖（席ごと）。数字を変えると性格が変わります
+//   call     鳴き方 'eager' よく鳴く / 'normal' / 'yakuhai' 役牌のポンだけ / 'careful' 手が進む鳴きだけ、リーチがいたら鳴かない
+//   somete   染め手（混一色・清一色）に寄せる
+//   fold     リーチを受けたとき、シャンテン数がこれ以上ならオリる
+//   push1    1シャンテンで押す危険度の上限（大きいほど押す）
+//   push0    テンパイで押す危険度の上限
+//   dama     役があって高い手（3翻以上）や悪い待ちならリーチしない
+const STYLES = {
+  0: { label: 'ふつう', desc: '', call: 'normal', somete: false, fold: 2, push1: 4, push0: 9, dama: false },
+  1: { label: '鳴き屋', desc: 'どんどん鳴いて早和了り。染め手が好き', call: 'eager', somete: true, fold: 3, push1: 6, push0: 12, dama: false },
+  2: { label: 'リーチ一直線', desc: '鳴かずにリーチ。押しが強い', call: 'yakuhai', somete: false, fold: 3, push1: 10, push0: 99, dama: false },
+  3: { label: '慎重派', desc: '守り重視。高い手はダマで待つ', call: 'careful', somete: false, fold: 1, push1: 0, push0: 4, dama: true },
+};
+const styleOf = s => (AUTO && s === 0 ? STYLES[0] : STYLES[s]);
 const WIND = R.WIND;
 const AKA_IDS = new Set([16, 52, 88]); // 赤ドラ（5萬・5筒・5索の 1 枚ずつ）
 const kindOf = id => id >> 2;
@@ -224,6 +238,7 @@ async function playHand() {
     const p = h.P[seat];
     if (act.riichi) {
       p.riichiPaid = true; p.ippatsu = true; p.riichiSeq = h.seq;
+      if (AUTO) seatStat(seat, 'riichi');
       G.scores[seat] -= 1000; G.sticks++;
       dirty = true;
     }
@@ -389,6 +404,7 @@ function performCall(call, from, id) {
   h.anyCall = true;
   for (const q of h.P) q.ippatsu = false;
   if (t === 'minkan') h.kans++;
+  if (AUTO) seatStat(call.seat, 'call');
   h.last = null;
   pop(call.seat, { pon: 'ポン', chi: 'チー', minkan: 'カン' }[t]);
   snd('call');
@@ -450,7 +466,7 @@ async function finishWin(seat, ev, from, ronId) {
   const sticks = G.sticks;
   G.sticks = 0;
   h.reveal[seat] = true;
-  if (AUTO) autoStat(tsumo ? 'tsumo' : 'ron', ev);
+  if (AUTO) { autoStat(tsumo ? 'tsumo' : 'ron', ev); seatStat(seat, 'win'); if (!tsumo) seatStat(from, 'dealin'); if (!ev.yaku.some(y => /立直/.test(y[0])) && isMenzen(h.P[seat])) seatStat(seat, 'dama'); if (ev.yaku.some(y => /一色/.test(y[0]))) seatStat(seat, 'somete'); }
   pop(seat, tsumo ? 'ツモ' : 'ロン');
   snd('win');
   dirty = true;
@@ -482,6 +498,11 @@ function autoStat(kind, ev) {
     for (const y of ev.yaku) st.yaku[y[0]] = (st.yaku[y[0]] || 0) + 1;
     st.label[ev.label || ev.han + '翻'] = (st.label[ev.label || ev.han + '翻'] || 0) + 1;
   }
+}
+
+function seatStat(seat, key) {
+  const st = window.__seat || (window.__seat = [{}, {}, {}, {}]);
+  st[seat][key] = (st[seat][key] || 0) + 1;
 }
 
 // ---------- CPU の思考 ----------
@@ -527,6 +548,20 @@ function chooseDiscard(seat) {
   const vis = visibleFor(seat);
   const dk = doraKinds();
   const threats = threatsOf(seat);
+  const st = styleOf(seat);
+  // 染め手：手牌と鳴いた牌でいちばん多い色（字牌も数える）が 8 枚以上なら、ほかの色から切る
+  let mainSuit = -1;
+  if (st.somete) {
+    const all = p.hand.concat(...p.melds.map(mm => mm.ids)).map(kindOf);
+    const honors = all.filter(k => k >= 27).length;
+    let best = 0;
+    for (let su = 0; su < 3; su++) {
+      const n = all.filter(k => k < 27 && Math.floor(k / 9) === su).length;
+      if (n > best) { best = n; mainSuit = su; }
+    }
+    if (best + honors < 8) mainSuit = -1;
+  }
+  const offSuit = k => mainSuit >= 0 && k < 27 && Math.floor(k / 9) !== mainSuit;
   let kinds = [...new Set(p.hand.map(kindOf))];
   if (p.forbid) { const k2 = kinds.filter(k => !p.forbid.includes(k)); if (k2.length) kinds = k2; }
   const evals = kinds.map(k => {
@@ -554,18 +589,18 @@ function chooseDiscard(seat) {
       keep += n === 0 || n === 8 ? 1 : n === 1 || n === 7 ? 2 : 3;
     }
     const danger = threats.reduce((a, t) => a + dangerOf(k, t, vis), 0);
-    return { k, s, uke, keep, danger };
+    return { k, s, uke, keep, danger, off: offSuit(k) ? 1 : 0 };
   });
-  const byEff = (a, b) => a.s - b.s || b.uke - a.uke || a.keep - b.keep;
+  const byEff = (a, b) => a.s - b.s || b.off - a.off || b.uke - a.uke || a.keep - b.keep;
   evals.sort(byEff);
   let pick = evals[0];
   if (threats.length) {
     const minS = pick.s;
     const safest = evals.slice().sort((a, b) => a.danger - b.danger || byEff(a, b))[0];
-    if (minS >= 2) pick = safest;
+    if (minS >= st.fold) pick = safest;
     else {
       const keepers = evals.filter(e => e.s === minS).sort((a, b) => a.danger - b.danger || byEff(a, b));
-      const limit = minS === 0 ? 9 : 4;
+      const limit = minS === 0 ? st.push0 : minS === 1 ? st.push1 : st.push1 / 2;
       pick = keepers[0].danger <= limit ? keepers[0] : safest;
     }
   }
@@ -591,8 +626,32 @@ function cpuTurn(seat, opts) {
     if (R.shanten(c, p.melds.length + 1) <= s0) return { type: 'kan', ...kn };
   }
   const d = chooseDiscard(seat);
-  const riichi = !!(opts.riichi && opts.riichi.includes(d.id) && d.ev.s === 0 && d.ev.uke > 0);
+  let riichi = !!(opts.riichi && opts.riichi.includes(d.id) && d.ev.s === 0 && d.ev.uke > 0);
+  if (riichi && styleOf(seat).dama) {
+    // 慎重派：リーチしなくても役があり、高い手か待ちが悪い（残り 4 枚以下）ならダマ
+    const han = damaHan(seat, d.id);
+    if (han >= 3 || (han >= 1 && d.ev.uke <= 4)) riichi = false;
+  }
   return { type: 'discard', id: d.id, riichi };
+}
+// リーチせずにロンしたときのいちばん安い翻数（役のない待ちがあれば 0）
+function damaHan(seat, discardId) {
+  const p = G.h.P[seat];
+  const ids = p.hand.filter(id => id !== discardId);
+  const cc = counts(ids);
+  const dk = doraKinds();
+  const allIds = ids.concat(...p.melds.map(m => m.ids));
+  let dora = 0, aka = 0;
+  for (const id of allIds) { for (const d of dk) if (kindOf(id) === d) dora++; if (isAka(id)) aka++; }
+  let min = 99;
+  for (const w of R.waits(cc, p.melds.length)) {
+    const c2 = cc.slice(); c2[w]++;
+    const ev = R.evaluate({ cc: c2, melds: evalMelds(p), win: w, tsumo: false, seatWind: seatWind(seat), roundWind: roundWind(),
+      dora: dora + dk.filter(d => d === w).length, aka, ura: 0 });
+    if (!ev) return 0;
+    min = Math.min(min, ev.yakuman ? 13 : ev.han);
+  }
+  return min === 99 ? 0 : min;
 }
 function minShantenAfter(c, m) {
   let best = 9;
@@ -614,7 +673,7 @@ function openYakuPossible(seat, k, pair) {
   const used = [k, ...pair, ...meldKinds];
   // 断么九
   const handYao = p.hand.filter(id => R.isYao(kindOf(id))).length - pair.filter(R.isYao).length;
-  if (used.every(x => !R.isYao(x)) && handYao <= 1) return true;
+  if (used.every(x => !R.isYao(x)) && handYao <= (styleOf(seat).call === 'eager' ? 2 : 1)) return true;
   // 混一色・清一色
   for (let s = 0; s < 3; s++) {
     const inSuit = x => x >= 27 || Math.floor(x / 9) === s;
@@ -630,12 +689,19 @@ function cpuWantsCall(seat, k, pair) {
   const p = G.h.P[seat];
   const c = counts(p.hand);
   const s0 = R.shanten(c, p.melds.length);
-  if (threatsOf(seat).length && s0 >= 2) return false;
-  if (!openYakuPossible(seat, k, pair)) return false;
+  const st = styleOf(seat);
+  const threat = threatsOf(seat).length > 0;
+  if (threat && (st.call === 'careful' || s0 >= (st.call === 'eager' ? 3 : 2))) return false;
   const yh = k >= 31 || k === seatWind(seat) || k === roundWind();
+  const yakuhaiPon = pair[0] === pair[1] && pair[0] === k && yh;
+  if (st.call === 'yakuhai' && !yakuhaiPon) return false;
+  if (!openYakuPossible(seat, k, pair)) return false;
   for (const x of pair) c[x]--;
   const s1 = minShantenAfter(c, p.melds.length + 1);
-  if (pair[0] === pair[1] && pair[0] === k && yh && s1 <= s0) return true;
+  if (st.call === 'careful') return s1 < s0 && s0 <= 3;
+  if (yakuhaiPon && s1 <= s0) return true;
+  // 鳴き屋は、もう鳴いているなら手が進まなくても形を崩さない鳴き（同じシャンテン数）もする
+  if (st.call === 'eager' && p.melds.length && s1 <= s0) return true;
   return s1 < s0;
 }
 
@@ -984,7 +1050,7 @@ function drawCenter() {
   ctx.fillStyle = '#0c3324';
   rrect(ctx, cx - C / 2, cy - C / 2, C, C, C * 0.08); ctx.fill();
   ctx.strokeStyle = '#2d7456'; ctx.lineWidth = 2; ctx.stroke();
-  const fs = Math.max(10, C * 0.105);
+  const fs = Math.max(10, C * 0.092);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let s = 0; s < 4; s++) {
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(-s * Math.PI / 2);
@@ -993,7 +1059,7 @@ function drawCenter() {
     const turn = h.cur === s;
     ctx.font = `${fs}px DotGothic16, monospace`;
     ctx.fillStyle = turn ? '#ffd84a' : seatWind(s) === 27 ? '#ff9a7a' : '#d8eee0';
-    ctx.fillText(wind + ' ' + G.scores[s], 0, C / 2 - fs * 0.85);
+    ctx.fillText(wind + ' ' + NAMES[s] + ' ' + G.scores[s], 0, C / 2 - fs * 0.85);
     if (turn) { ctx.fillStyle = '#ffd84a'; ctx.fillRect(-C * 0.3, C / 2 - fs * 0.2, C * 0.6, 2); }
     if (p.riichiPaid) {
       const sw = C * 0.5, sh = Math.max(4, fs * 0.32), sy = C / 2 - fs * 1.85;
@@ -1217,6 +1283,7 @@ function showTitle() {
     ${opt('赤ドラ', 'aka', [[true, 'あり'], [false, 'なし']])}
     ${opt('CPUの速さ', 'speed', [['slow', 'ゆっくり'], ['normal', 'ふつう'], ['fast', 'はやい']])}
     ${opt('待ちのヒント', 'hint', [[true, 'あり'], [false, 'なし']])}
+    <div class="rivals">${[1, 2, 3].map(s => `<div><b>${NAMES[s]}</b><span>${STYLES[s].label}</span><small>${STYLES[s].desc}</small></div>`).join('')}</div>
     <div class="btns">${snap ? '<button class="big" id="cont">続きから</button>' : ''}<button class="big" id="start">はじめる</button></div>
     ${snap ? `<p class="small">続き：${WIND[Math.floor(snap.roundNum / 4)]}${snap.roundNum % 4 + 1}局 ${snap.honba}本場のはじめから（あなた ${snap.scores[0]}点）</p>` : ''}
     <div class="btns"><button id="howto">遊び方・役一覧</button></div>${stats}
@@ -1247,6 +1314,7 @@ function showHowto(back) {
       <li>自分の番は牌を 1 枚ツモって、1 枚切ります。<b>パソコン</b>はクリック、<b>スマホ</b>は同じ牌を 2 回タップで切ります</li>
       <li>和了れるとき・鳴けるときは下にボタンが出ます（ツモ・ロン・リーチ・ポン・チー・カン・スキップ）。メニュー（≡）で鳴きの確認を「しない」にもできます</li>
       <li>リーチはメンゼンでテンパイのとき。押すと切れる牌だけが明るくなります。リーチ後はツモ切りが自動</li>
+      <li>対戦相手には癖があります。${[1, 2, 3].map(s => `<b>${NAMES[s]}</b>（${STYLES[s].label}）：${STYLES[s].desc}`).join('、')}</li>
       <li>和了には役が 1 つ以上必要です。ドラは役になりません</li>
       <li>待ちのヒントが「あり」なら、切るとテンパイになる牌に ▼ が付き、テンパイ中は待ち牌が表示されます</li>
       <li>フリテン（自分の捨て牌に待ち牌がある・見逃した）だとロンできません。ツモは OK</li>

@@ -99,3 +99,8 @@ table { border-collapse: collapse; margin: 8px auto; }
 .ylist th { padding: 6px 10px 6px 0; font-weight: normal; color: #ffe36a; white-space: nowrap; vertical-align: top; }
 .ylist td { padding: 6px 0; font-size: 14px; line-height: 1.6; border-top: 1px solid #24553f; }
 .ylist th { border-top: 1px solid #24553f; }
+.rivals { display: flex; gap: 8px; justify-content: center; margin: 14px 0 4px; }
+.rivals div { flex: 1; max-width: 160px; border: 1px solid #3d8a68; border-radius: 10px; padding: 8px 6px; background: #0b2018; }
+.rivals b { display: block; font-weight: normal; font-size: 18px; color: #ffe36a; }
+.rivals span { display: block; font-size: 14px; color: #fff; margin: 2px 0 4px; }
+.rivals small { display: block; font-size: 11px; color: #9fc4b0; line-height: 1.4; }
