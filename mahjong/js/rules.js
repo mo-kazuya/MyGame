@@ -324,7 +324,7 @@
 
   const ceil100 = x => Math.ceil(x / 100) * 100;
 
-  const api = { NAMES, WIND, isYao, doraOf, shanten, waits, isAgari, decompose, evaluate, basePoints, ceil100 };
+  const api = { NAMES, WIND, isYao, doraOf, shanten, shantenChiitoi, waits, isAgari, decompose, evaluate, basePoints, ceil100 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Mj = api;
 })(typeof window !== 'undefined' ? window : globalThis);
